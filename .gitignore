@@ -1,0 +1,7 @@
+node_modules/
+main.js
+test-vault/.obsidian/plugins/
+test-vault/.obsidian/workspace*.json
+test-vault/.obsidian/cache
+test-vault/.trash/
+.DS_Store

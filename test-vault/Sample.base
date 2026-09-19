@@ -1,0 +1,8 @@
+filters:
+  and:
+    - file.hasLink("E")
+views:
+  - type: link-directory
+    name: Tree
+  - type: table
+    name: Table

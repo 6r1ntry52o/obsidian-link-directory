@@ -1,0 +1,10 @@
+{
+  "id": "link-directory",
+  "name": "Link Directory",
+  "version": "0.1.0",
+  "minAppVersion": "1.10.0",
+  "description": "Browse the outgoing-link structure of your notes as a directory tree, styled like the File Explorer.",
+  "author": "6r1ntr",
+  "authorUrl": "https://github.com/6r1ntry52o",
+  "isDesktopOnly": false
+}
