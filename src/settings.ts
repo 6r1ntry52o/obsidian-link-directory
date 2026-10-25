@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from "obsidian";
 import type LinkDirectoryPlugin from "./main";
 import { t } from "./i18n";
+import type { Direction } from "./layered";
 
 export interface LinkDirectorySettings {
 	rootMode: "active" | "fixed";
@@ -14,6 +15,20 @@ export interface LinkDirectorySettings {
 	autoReveal: boolean;
 	initialDepth: number;
 	maxNodes: number;
+	/** Tree graph: grow from the active note, or from a pinned note. */
+	graphRootMode: "active" | "fixed";
+	/** Tree graph: the pinned note the graph grows from. */
+	graphRootPath: string;
+	/** Tree graph: folder searched for notes the root cannot reach ("" = the root's folder). */
+	graphOrphanScope: string;
+	/** Tree graph: grow down (rows) or right (columns). */
+	graphDirection: Direction;
+	/** Tree graph: show every note name, or only those on the route to the open note. */
+	graphLabels: "all" | "route";
+	/** Tree graph: wrap a layer longer than this many pixels (0 = never). */
+	graphMaxLength: number;
+	/** Tree graph: show only the route to the open note and the notes linked from it. */
+	graphFocus: boolean;
 }
 
 export const DEFAULT_SETTINGS: LinkDirectorySettings = {
@@ -28,6 +43,13 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	autoReveal: true,
 	initialDepth: 1,
 	maxNodes: 10000,
+	graphRootMode: "active",
+	graphRootPath: "",
+	graphOrphanScope: "",
+	graphDirection: "down",
+	graphLabels: "all",
+	graphMaxLength: 1200,
+	graphFocus: false,
 };
 
 export class LinkDirectorySettingTab extends PluginSettingTab {
@@ -168,6 +190,93 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 					const n = Number.parseInt(v, 10);
 					if (Number.isFinite(n) && n > 0) {
 						s.maxNodes = n;
+						save();
+					}
+				}),
+			);
+
+		new Setting(containerEl).setName(t("setGraphHeading")).setHeading();
+
+		new Setting(containerEl)
+			.setName(t("setGraphRootMode"))
+			.setDesc(t("setGraphRootModeDesc"))
+			.addDropdown((d) =>
+				d
+					.addOptions({ active: t("setRootModeActive"), fixed: t("setRootModeFixed") })
+					.setValue(s.graphRootMode)
+					.onChange((v) => {
+						s.graphRootMode = v as "active" | "fixed";
+						save();
+						this.display();
+					}),
+			);
+
+		if (s.graphRootMode === "fixed") {
+			new Setting(containerEl)
+				.setName(t("setGraphRoot"))
+				.setDesc(t("setGraphRootDesc"))
+				.addText((tx) =>
+					tx.setValue(s.graphRootPath).onChange((v) => {
+						s.graphRootPath = v.trim();
+						save();
+					}),
+				);
+
+			new Setting(containerEl)
+				.setName(t("setGraphScope"))
+				.setDesc(t("setGraphScopeDesc"))
+				.addText((tx) =>
+					tx.setValue(s.graphOrphanScope).onChange((v) => {
+						s.graphOrphanScope = v.trim();
+						save();
+					}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName(t("setGraphDirection"))
+			.setDesc(t("setGraphDirectionDesc"))
+			.addDropdown((d) =>
+				d
+					.addOptions({ down: t("setGraphDirectionDown"), right: t("setGraphDirectionRight") })
+					.setValue(s.graphDirection)
+					.onChange((v) => {
+						s.graphDirection = v as Direction;
+						save();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphNames"))
+			.setDesc(t("setGraphNamesDesc"))
+			.addDropdown((d) =>
+				d
+					.addOptions({ all: t("setGraphNamesAll"), route: t("setGraphNamesRoute") })
+					.setValue(s.graphLabels)
+					.onChange((v) => {
+						s.graphLabels = v as "all" | "route";
+						save();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphFocus"))
+			.setDesc(t("setGraphFocusDesc"))
+			.addToggle((tg) =>
+				tg.setValue(s.graphFocus).onChange((v) => {
+					s.graphFocus = v;
+					save();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphMaxLength"))
+			.setDesc(t("setGraphMaxLengthDesc"))
+			.addText((tx) =>
+				tx.setValue(String(s.graphMaxLength)).onChange((v) => {
+					const n = Number.parseInt(v, 10);
+					if (Number.isFinite(n) && n >= 0) {
+						s.graphMaxLength = n;
 						save();
 					}
 				}),

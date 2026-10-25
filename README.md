@@ -19,6 +19,29 @@ A note is a "folder"; the notes it links to are its "files". Expand a note to se
 - Right-click menu: *Set as root*, *Open in new tab*, plus the standard file menu.
 - Live updates when notes are edited, renamed or deleted.
 
+## Tree graph
+
+A second view (ribbon icon *network*, command **Open tree graph**) draws the same links as a graph seen from one root note:
+
+- **Root = the active note** (default): the graph redraws from each note you open. A note opened *from the graph* keeps the root, so you can follow a route. **Pin** (header button, or *Set as tree graph root*) fixes a root such as `note/TOP.md`; the list of unreachable notes appears only with a pinned root.
+
+- **One row per link distance** from the root (shortest path). Every note appears **once**; a note linked from several notes in the row above gets a line from each, so the lines merge instead of the note being repeated.
+- Notes are **dots**, coloured like the core Graph view. **Names**: every note, or only the route from the root to the open note (others on hover). A faint band behind each row shows where a row begins and ends.
+- **Direction**: top to bottom, or left to right (names beside the dots — the readable choice when rows get long). Each layer sits only as far from the next as its own longest name needs; lines run out past the names, bend only in the gap between layers, and run straight in to their dot, so they do not cross other names.
+- **Long rows wrap**: a row longer than the limit (default 1200 px) folds into several rows, keeping its order, so the graph stays within a screen's width.
+- The header buttons switch direction and names on the spot.
+- Links **within a row** or **back up** to a shallower row are always drawn, but thin and dashed with an arrowhead, so they read as secondary.
+- The **routes from the root to the open note** stand out by colour strength as well as width: the first-found route thick in the full accent colour (its names too), every other shortest route thin in a pale accent, and the remaining lines step back. The open note's name is marked like the current file in the File Explorer, and the graph pans to it when it is off screen (auto-reveal).
+- **Focus** (header button, or *Only the route and its links* in the settings) hides every note that is neither on a route from the root to the open note nor linked from a note on it, and lays the rest out again: a large graph shrinks to the path and what branches off it. Rows keep their link distance. Without a route (no note open, or one the root cannot reach) it shows the root and its links; the legend counts the hidden notes.
+- Notes in the root's folder (or a folder you choose) that the root **cannot reach** are listed under the graph, newest first. Opening one shows a notice and highlights it in the list; no route is drawn.
+- Drag to pan, wheel or pinch to zoom, the *Fit* button shows everything. Click a node to open it beside the graph; click an unresolved node to create the note. Right-click / long-press: *Set as tree graph root*, *Open in new tab*, file menu.
+- It opens in a split next to your notes, so the highlight follows you as you navigate.
+
+## Installation
+
+- **BRAT**: install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run *BRAT: Add a beta plugin for testing* and enter `6r1ntry52o/obsidian-link-directory`.
+- **Manual**: download `main.js`, `manifest.json` and `styles.css` from the latest release into `<vault>/.obsidian/plugins/link-directory/`, then enable *Link Directory* under Community plugins.
+
 ## Settings
 
 | Setting | Default | Notes |
@@ -31,7 +54,14 @@ A note is a "folder"; the notes it links to are its "files". Expand a note to se
 | Show unresolved links | on | click creates the note |
 | Auto-reveal active note | on | fixed root only |
 | Initial expand depth | 1 | levels opened when the root changes |
-| Search limit | 10000 | notes explored during reveal |
+| Search limit | 10000 | notes explored during reveal, and in the tree graph |
+| Tree graph → Root note | Follow active note | or a fixed note |
+| Tree graph → Fixed root path | (empty) | fixed root only |
+| Tree graph → Folder for unreachable notes | (empty) | fixed root only; empty = the root note's folder |
+| Tree graph → Direction | top to bottom | or left to right |
+| Tree graph → Note names | every note | or route only (others on hover) |
+| Tree graph → Wrap long rows (px) | 1200 | 0 = never wrap |
+| Tree graph → Only the route and its links | off | hide notes off the route and the notes it links to |
 
 ## Development
 
@@ -42,7 +72,7 @@ npm run build     # typecheck + bundle to main.js
 npm run deploy    # bundle and copy into test-vault/.obsidian/plugins/link-directory
 ```
 
-`test-vault/` is a small vault with cycles, a diamond, aliases, embeds, markdown links, an unresolved link and a deep chain. Open it in Obsidian and enable the plugin to try things out.
+`test-vault/` is a small vault with cycles, a diamond, aliases, embeds, markdown links, an unresolved link and a deep chain. Open it in Obsidian and enable the plugin to try things out. `test-vault/tg/` is the tree-graph scenario: root `根`, four branches, leaves that merge from up to four branches, a same-row link, a link back to the root, an unresolved link, a long name, and two notes the root cannot reach. `test-vault/tgw/` is the wide one: root `幹`, six branches, 90 notes in row 2 and 36 in row 3, for checking wrapping and the two directions.
 
 ## Design notes
 
@@ -51,3 +81,5 @@ The design follows conventions found in IDE call hierarchies (IntelliJ), depende
 - cycles are detected by **ancestor path**, not a global visited set (a global set hides diamonds);
 - second occurrences are **shown but not expanded**, with a short marker and a legend that appears only when needed;
 - reveal follows **one canonical (shortest) path** and highlights every occurrence.
+
+The tree graph is a layered (Sugiyama-style) drawing with the layers fixed by BFS depth. Because a link from row d can only land in row d+1, d or above, no edge skips a row, so no dummy nodes are needed; the only layout work is ordering each row to reduce crossings (barycenter sweeps, keeping the best). Row 1 keeps the root's link order. A long row wraps column-major (order kept, a parent's children stay in one block), with sub-rows staggered so lines reach the lower ones between the dots above; rows are added until the folded row really fits the limit. Layers are spaced by how far their names reach (`place()` takes a per-node depth and returns where each layer starts and where its lines leave).

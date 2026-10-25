@@ -5,3 +5,4 @@ test-vault/.obsidian/workspace*.json
 test-vault/.obsidian/cache
 test-vault/.trash/
 .DS_Store
+.devbridge/

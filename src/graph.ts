@@ -38,6 +38,29 @@ export const DEFAULT_TREE_OPTIONS: TreeOptions = {
 	maxNodes: 10000,
 };
 
+export type LinkFilter = Pick<TreeOptions, "includeEmbeds" | "includeFrontmatter" | "showUnresolved">;
+
+/** Identity of a link target: the vault path, or `?target` for a note that does not exist yet. */
+export function linkKey(link: ChildLink): string {
+	return link.path ?? `?${link.target.toLowerCase()}`;
+}
+
+/** Apply the option filters and drop repeated targets, keeping appearance order. */
+export function filterLinks(links: ChildLink[], opts: LinkFilter): ChildLink[] {
+	const seen = new Set<string>();
+	const out: ChildLink[] = [];
+	for (const c of links) {
+		if (c.kind === "embed" && !opts.includeEmbeds) continue;
+		if (c.kind === "frontmatter" && !opts.includeFrontmatter) continue;
+		if (c.path === null && !opts.showUnresolved) continue;
+		const key = linkKey(c);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(c);
+	}
+	return out;
+}
+
 /**
  * Lazily unfolds the outgoing-link graph into a tree.
  *
@@ -102,17 +125,7 @@ export class LinkTree {
 
 	/** Raw children after option filters, sibling-deduplicated, sorted. */
 	filteredChildren(path: string): ChildLink[] {
-		const seen = new Set<string>();
-		const out: ChildLink[] = [];
-		for (const c of this.src.getChildren(path)) {
-			if (c.kind === "embed" && !this.opts.includeEmbeds) continue;
-			if (c.kind === "frontmatter" && !this.opts.includeFrontmatter) continue;
-			if (c.path === null && !this.opts.showUnresolved) continue;
-			const key = c.path ?? `?${c.target.toLowerCase()}`;
-			if (seen.has(key)) continue;
-			seen.add(key);
-			out.push(c);
-		}
+		const out = filterLinks(this.src.getChildren(path), this.opts);
 		if (this.opts.sort === "name") {
 			out.sort((a, b) => a.display.localeCompare(b.display, undefined, { numeric: true, sensitivity: "base" }));
 		}

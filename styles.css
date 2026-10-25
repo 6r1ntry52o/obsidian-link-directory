@@ -100,3 +100,262 @@
 	box-shadow: inset 0 0 0 2px var(--background-modifier-border-focus);
 	border-radius: var(--radius-s);
 }
+
+/* ---------------------------------------------------------------- Tree graph */
+
+/* Route colours: the main route in the full accent, other shortest routes in
+   a pale accent (mixed towards the background, so lighter in a light theme and
+   darker in a dark one), the open note's name on an accent-tinted box. */
+.ldg {
+	--ldg-route: var(--interactive-accent);
+	--ldg-route-alt: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-primary));
+	--ldg-marker: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+}
+
+.workspace-leaf-content[data-type="link-directory-graph"] .view-content {
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+.ldg .ld-root-label {
+	padding: 0 var(--size-4-3) var(--size-4-1);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ldg-canvas {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 120px;
+	overflow: hidden;
+}
+.ldg-canvas svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+	touch-action: none;
+	user-select: none;
+	cursor: grab;
+}
+.ldg-canvas svg:active {
+	cursor: grabbing;
+}
+.ldg-canvas .ld-empty {
+	position: absolute;
+	inset: 0;
+	padding: var(--size-4-4);
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+}
+
+.ldg-edge {
+	fill: none;
+	stroke: var(--text-faint);
+	stroke-width: 1.3px;
+}
+/* Links within a row or back up: always drawn, but thin and dashed so they read as secondary. */
+.ldg-edge.is-same,
+.ldg-edge.is-up {
+	stroke-width: 1px;
+	stroke-dasharray: 4 3;
+	opacity: 0.55;
+}
+.ldg-arrow {
+	fill: var(--text-faint);
+}
+/* While a route is shown, the other lines step back. */
+.ldg-canvas svg.has-route .ldg-edge {
+	opacity: 0.45;
+}
+.ldg-canvas svg.has-route .ldg-edge.is-same,
+.ldg-canvas svg.has-route .ldg-edge.is-up {
+	opacity: 0.3;
+}
+/* Every shortest route to the open note: pale and thin; the first-found one full and thick. */
+.ldg-canvas svg .ldg-edge.is-route {
+	stroke: var(--ldg-route-alt);
+	stroke-width: 2px;
+	opacity: 1;
+}
+.ldg-canvas svg .ldg-edge.is-main {
+	stroke: var(--ldg-route);
+	stroke-width: 3.5px;
+}
+
+/* Nodes are dots, coloured like the core Graph view. */
+.ldg-node {
+	cursor: pointer;
+}
+.ldg-hit {
+	fill: transparent;
+}
+.ldg-dot {
+	fill: var(--graph-node, var(--text-muted));
+	stroke: var(--background-primary);
+	stroke-width: 1px;
+}
+.ldg-node:hover .ldg-dot {
+	fill: var(--graph-node-focused, var(--text-accent));
+}
+.ldg-node.is-root .ldg-dot {
+	fill: var(--text-normal);
+}
+.ldg-node.is-unresolved .ldg-dot {
+	fill: var(--background-primary);
+	stroke: var(--graph-node-unresolved, var(--text-faint));
+	stroke-width: 1.2px;
+	stroke-dasharray: 2 2;
+}
+.ldg-node.is-route .ldg-dot {
+	fill: var(--ldg-route-alt);
+}
+.ldg-node.is-main .ldg-dot {
+	fill: var(--ldg-route);
+}
+.ldg-node.is-active .ldg-dot {
+	r: 8px;
+	fill: var(--ldg-route);
+	stroke: var(--text-normal);
+	stroke-width: 2px;
+}
+/* The open note's name, marked like the current file in the File Explorer. */
+.ldg-marker {
+	fill: var(--ldg-marker);
+	stroke: var(--ldg-route);
+	stroke-width: 1px;
+}
+/* Names get a halo in the background colour so lines passing under them stay readable. */
+.ldg-label {
+	fill: var(--graph-text, var(--text-normal));
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-smaller);
+	paint-order: stroke;
+	stroke: var(--background-primary);
+	stroke-width: 3px;
+	stroke-linejoin: round;
+}
+.ldg-node.is-root .ldg-label,
+.ldg-node.is-active .ldg-label {
+	font-weight: var(--font-semibold);
+}
+/* Names along the main route take the accent too, so the route reads from its names. */
+.ldg-node.is-main .ldg-label {
+	fill: var(--text-accent);
+}
+.ldg-node.is-active .ldg-label {
+	fill: var(--text-normal);
+	stroke: var(--ldg-marker);
+}
+.ldg-node.is-unresolved .ldg-label {
+	fill: var(--text-faint);
+	font-style: italic;
+}
+/* "Route only": names on the route, the root and the hovered dot. */
+.ldg-canvas svg.is-names-route .ldg-node:not(.is-route):not(.is-root):not(:hover) .ldg-label {
+	display: none;
+}
+
+.ldg-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-2-2) var(--size-4-3);
+	padding: var(--size-2-3) var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+.ldg-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4em;
+}
+.ldg-legend-item.mod-warning {
+	color: var(--text-warning);
+}
+.ldg-swatch {
+	width: 22px;
+	height: 0;
+	border-top: 1.5px solid var(--text-faint);
+}
+.ldg-swatch.is-faint {
+	border-top: 1px dashed var(--text-faint);
+}
+.ldg-swatch.is-main {
+	border-top: 3px solid var(--ldg-route);
+}
+.ldg-swatch.is-route {
+	border-top: 2px solid var(--ldg-route-alt);
+}
+
+.ldg-notice {
+	padding: var(--size-2-3) var(--size-4-3);
+	font-size: var(--font-ui-small);
+	color: var(--text-warning);
+}
+.ldg-notice:empty {
+	display: none;
+}
+
+.ldg-orphans {
+	flex: 0 0 auto;
+	max-height: 35%;
+	overflow: auto;
+	border-top: 1px solid var(--background-modifier-border);
+}
+.ldg-orphans > summary {
+	position: sticky;
+	top: 0;
+	padding: var(--size-2-3) var(--size-4-3);
+	background: var(--background-primary);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.ldg-orphan {
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-4-2);
+	margin: 0 var(--size-4-2);
+	padding: var(--size-2-1) var(--size-4-3);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+.ldg-orphan:hover {
+	background: var(--background-modifier-hover);
+}
+.ldg-orphan.is-active {
+	background: var(--background-modifier-active-hover);
+	color: var(--text-normal);
+}
+.ldg-orphan-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.ldg-orphan-folder {
+	margin-inline-start: auto;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+.ldg-orphan-more {
+	padding: var(--size-2-1) var(--size-4-5) var(--size-2-3);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+/* Room for the last row above Obsidian's floating status bar. */
+.ldg-orphans {
+	padding-bottom: var(--size-4-6);
+}
+
+/* One faint band per layer (behind lines and dots). */
+.ldg-band {
+	fill: var(--background-modifier-hover);
+	opacity: 0.7;
+}
