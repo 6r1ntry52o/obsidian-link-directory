@@ -174,13 +174,19 @@ export function orderLayers(g: LayeredGraph, sweeps = 4): void {
 
 /**
  * The part of the graph around a route: the route's notes and every note one
- * of them links to (down, within a layer or back up). Depths stay as in the
- * full graph, so a row still means a link distance from the root; the route
- * reaches every depth up to its end, so no row in between goes empty.
+ * of them links to (down, within a layer or back up), and the notes `from`
+ * (the open note, on the route) reaches by up to `hops` links (0 = any
+ * number), not going on through the route, as `reachFrom` colours them.
+ * Depths stay as in the full graph, so a row still means a link distance from
+ * the root; the route reaches every depth up to its end, and a link goes at
+ * most one row further, so no row in between goes empty.
  */
-export function focusOn(g: LayeredGraph, route: Set<string>): LayeredGraph {
+export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, hops = 1): LayeredGraph {
 	const keep = new Set<string>([g.root, ...route]);
 	for (const e of g.edges) if (route.has(e.from)) keep.add(e.to);
+	if (from !== undefined && route.has(from)) {
+		for (const [id, h] of reachFrom(g, from, route).nodes) if (hops <= 0 || h <= hops) keep.add(id);
+	}
 	const nodes = new Map<string, GraphNode>();
 	for (const [id, n] of g.nodes) {
 		if (keep.has(id)) nodes.set(id, { ...n, parents: n.parents.filter((p) => keep.has(p)) });

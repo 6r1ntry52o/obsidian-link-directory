@@ -143,6 +143,13 @@
 	overflow: hidden;
 }
 
+/* The hops chooser sits in the row of header buttons, so it keeps to their height. */
+.ldg .ldg-hops {
+	height: auto;
+	padding-block: 2px;
+	font-size: var(--font-ui-smaller);
+}
+
 .ldg .ld-root-label {
 	padding: 0 var(--size-4-3) var(--size-4-1);
 	font-size: var(--font-ui-smaller);
@@ -253,6 +260,31 @@
 }
 .ldg-node.is-unresolved.is-link .ldg-dot {
 	stroke: var(--ldg-hop);
+}
+/* Its hops from the open note, in its dot (made larger for it): black or
+   white, whichever reads better on the dot's shade (the lightness where both
+   give the same contrast is about 49). */
+.ldg-hop-num {
+	fill: var(--text-normal);
+	font-family: var(--font-interface);
+	font-size: 9px;
+	font-weight: var(--font-bold);
+	font-variant-numeric: tabular-nums;
+	text-anchor: middle;
+	dominant-baseline: central;
+	pointer-events: none;
+}
+.ldg-hop-num.is-wide {
+	font-size: 8px;
+	letter-spacing: -0.4px;
+}
+@supports (color: lch(from red l c h)) {
+	.ldg-hop-num {
+		fill: lch(from var(--ldg-hop) calc((49.4 - l) * 100) 0 0);
+	}
+}
+.ldg-node.is-unresolved .ldg-hop-num {
+	fill: var(--text-muted);
 }
 .ldg-node.is-route .ldg-dot {
 	fill: var(--ldg-route-alt);

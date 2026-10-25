@@ -199,6 +199,41 @@ describe("focusOn", () => {
 		expect(f.edges.every((e) => e.from === "R.md")).toBe(true);
 	});
 
+	it("keeps what the open note reaches, as far as the hops asked for", () => {
+		// route R → A; A → B → C → D → E down a chain, B also back up to F (off the route)
+		const chain = { R: ["A", "F"], A: ["B"], B: ["C", "F"], C: ["D"], D: ["E"], E: [], F: ["Z"], Z: [] };
+		const g = buildLayers(fake(chain), "R.md", opts);
+		const route = pathToRoot(g, "A.md")?.nodes ?? new Set<string>();
+		const shown = (hops: number) => [...focusOn(g, route, "A.md", hops).nodes.values()].map((n) => n.display).sort();
+		// 1 hop = the route and the notes it links to, as without `from`
+		expect(shown(1)).toEqual(["A", "B", "F", "R"]);
+		expect(shown(1)).toEqual([...focusOn(g, route).nodes.values()].map((n) => n.display).sort());
+		expect(shown(2)).toEqual(["A", "B", "C", "F", "R"]);
+		// F is off the route, so the walk goes on from it: Z is 3 hops away (A → B → F → Z)
+		expect(shown(3)).toEqual(["A", "B", "C", "D", "F", "R", "Z"]);
+		// 0 = every hop
+		expect(shown(0)).toEqual(["A", "B", "C", "D", "E", "F", "R", "Z"]);
+		const f = focusOn(g, route, "A.md", 0);
+		expect(f.layers.map((l) => l.map((id) => f.nodes.get(id)?.display).sort())).toEqual([
+			["R"],
+			["A", "F"],
+			["B", "Z"],
+			["C"],
+			["D"],
+			["E"],
+		]);
+		expect(f.edges.every((e) => f.nodes.has(e.from) && f.nodes.has(e.to))).toBe(true);
+	});
+
+	it("does not go on through the route, nor from a note off it", () => {
+		// the open note X links back up to the root: what the root links to is not taken
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["X"], B: ["Y"], X: ["R"], Y: [] }), "R.md", opts);
+		const route = pathToRoot(g, "X.md")?.nodes ?? new Set<string>();
+		expect(names(focusOn(g, route, "X.md", 0))).toEqual([["R"], ["A", "B"], ["X"]]);
+		// a `from` the route does not reach (no route) adds nothing
+		expect(names(focusOn(g, new Set(["R.md"]), "Y.md", 0))).toEqual([["R"], ["A", "B"]]);
+	});
+
 	it("gives the same route on the focused graph", () => {
 		const g = buildLayers(fake(sketch), "R.md", opts);
 		const full = pathToRoot(g, "G5.md");

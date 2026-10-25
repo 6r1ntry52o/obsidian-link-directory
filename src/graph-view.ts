@@ -19,6 +19,7 @@ import {
 	type Reach,
 } from "./layered";
 import type LinkDirectoryPlugin from "./main";
+import { FOCUS_HOPS, hopsLabel } from "./settings";
 
 export const VIEW_TYPE_TREE_GRAPH = "link-directory-graph";
 
@@ -47,6 +48,10 @@ const READABLE_SCALE = 0.75;
 const HOP_LEVELS = 4;
 const HOP_CLASSES = Array.from({ length: HOP_LEVELS }, (_, i) => `hop-${i + 1}`);
 const hopClass = (hop: number) => `hop-${Math.min(hop, HOP_LEVELS)}`;
+/** A reached note's dot carries its hops from the open note: room for one digit, or two. */
+const NUM_R = 7;
+const NUM_R_WIDE = 8;
+const numRadius = (hop: number) => (hop < 10 ? NUM_R : NUM_R_WIDE);
 /** The light along the coloured lines: strip length (short, so it keeps to bends), speed, rest between runs, fade at the ends. */
 const FLOW_LEN = 12;
 const FLOW_SPEED = 140;
@@ -97,6 +102,7 @@ export class TreeGraphView extends ItemView {
 	private dirBtnEl!: HTMLElement;
 	private namesBtnEl!: HTMLElement;
 	private focusBtnEl!: HTMLElement;
+	private hopsEl!: HTMLSelectElement;
 	private canvasEl!: HTMLElement;
 	private svgEl!: SVGSVGElement;
 	private viewportEl!: SVGGElement;
@@ -155,6 +161,14 @@ export class TreeGraphView extends ItemView {
 		this.focusBtnEl = this.actionButton(buttons, "focus", "", () => {
 			const s = this.plugin.settings;
 			s.graphFocus = !s.graphFocus;
+			void this.plugin.saveSettings();
+		});
+		// Hops from the open note, beside the focus button while it is on.
+		this.hopsEl = buttons.createEl("select", { cls: ["dropdown", "ldg-hops"] });
+		for (const n of FOCUS_HOPS) this.hopsEl.createEl("option", { value: String(n), text: hopsLabel(n) });
+		this.hopsEl.setAttr("aria-label", t("setGraphFocusHops"));
+		this.hopsEl.addEventListener("change", () => {
+			this.plugin.settings.graphFocusHops = Number(this.hopsEl.value);
 			void this.plugin.saveSettings();
 		});
 		this.actionButton(buttons, "scan", t("graphFit"), () => this.fit());
@@ -249,14 +263,15 @@ export class TreeGraphView extends ItemView {
 		const full = buildLayers(new MetadataLinkSource(this.app), rootFile.path, s);
 		orderLayers(full);
 		this.full = full;
-		// Focus: only the route to the open note and the notes linked from it
-		// (the root and its links when there is no route), laid out afresh.
+		// Focus: only the route to the open note, the notes linked from it and
+		// what the open note reaches within the chosen hops (the root and its
+		// links when there is no route), laid out afresh.
 		let g = full;
 		let route: string | null = null;
 		if (s.graphFocus) {
 			const hl = this.activePath ? pathToRoot(full, this.activePath) : null;
 			route = hl ? this.activePath : null;
-			g = focusOn(full, hl?.nodes ?? new Set([full.root]));
+			g = focusOn(full, hl?.nodes ?? new Set([full.root]), route ?? undefined, s.graphFocusHops);
 			orderLayers(g);
 		}
 		this.focusedOn = s.graphFocus ? this.activePath : undefined;
@@ -265,7 +280,7 @@ export class TreeGraphView extends ItemView {
 		const right = s.graphDirection === "right";
 		const allNames = s.graphLabels === "all";
 		// A new root, a different layout or (focused) another route starts from a fresh fit.
-		const layoutKey = [g.root, s.graphDirection, s.graphLabels, s.graphMaxLength, s.graphFocus ? `focus:${route ?? ""}` : ""].join("|");
+		const layoutKey = [g.root, s.graphDirection, s.graphLabels, s.graphMaxLength, s.graphFocus ? `focus:${route ?? ""}:${s.graphFocusHops}` : ""].join("|");
 		if (layoutKey !== this.layoutKey) this.fitted = false;
 		this.layoutKey = layoutKey;
 		this.nodesSvgEl.toggleClass("is-names-route", !allNames);
@@ -340,30 +355,32 @@ export class TreeGraphView extends ItemView {
 	}
 
 	private drawEdge(e: GraphEdge): void {
+		const g = this.graph;
+		const d = this.edgeD(e, (id) => radius(g, id));
+		if (d === null) return;
+		const el = this.edgesEl.createSvg("path", { cls: ["ldg-edge", `is-${e.kind}`], attr: { d } });
+		if (e.kind !== "down") el.setAttr("marker-end", "url(#ldg-arrow)");
+		this.edgeEls.set(edgeKey(e.from, e.to), el);
+	}
+
+	private edgeD(e: GraphEdge, r: (id: string) => number): string | null {
 		const a = this.points.get(e.from);
 		const b = this.points.get(e.to);
-		if (!a || !b) return;
+		if (!a || !b) return null;
 		const g = this.graph;
 		const layer = (id: string) => g?.nodes.get(id)?.depth ?? 0;
 		const port = (id: string) => this.ports[layer(id)] ?? 0;
-		const el = this.edgesEl.createSvg("path", {
-			cls: ["ldg-edge", `is-${e.kind}`],
-			attr: {
-				d: edgePath(
-					e.kind,
-					a,
-					b,
-					radius(g, e.from),
-					radius(g, e.to),
-					this.plugin.settings.graphDirection,
-					port(e.from),
-					port(e.to),
-					this.starts[layer(e.to)] ?? 0,
-				),
-			},
-		});
-		if (e.kind !== "down") el.setAttr("marker-end", "url(#ldg-arrow)");
-		this.edgeEls.set(edgeKey(e.from, e.to), el);
+		return edgePath(
+			e.kind,
+			a,
+			b,
+			r(e.from),
+			r(e.to),
+			this.plugin.settings.graphDirection,
+			port(e.from),
+			port(e.to),
+			this.starts[layer(e.to)] ?? 0,
+		);
 	}
 
 	private drawNode(n: GraphNode, label: string, right: boolean): void {
@@ -401,24 +418,32 @@ export class TreeGraphView extends ItemView {
 		this.namesBtnEl.setAttr("aria-label", all ? t("graphNamesAll") : t("graphNamesRoute"));
 		this.focusBtnEl.toggleClass("is-active", s.graphFocus);
 		this.focusBtnEl.setAttr("aria-label", s.graphFocus ? t("graphFocusOn") : t("graphFocusOff"));
+		this.hopsEl.toggle(s.graphFocus);
+		this.hopsEl.value = String(s.graphFocusHops);
 	}
 
 	/**
 	 * Colour the routes to the active note without re-laying out: the main
 	 * route in the full accent, the other shortest ones in a pale accent, the
 	 * rest of the lines dimmed. Everything the active note reaches by links
-	 * takes the link colour, paler with each hop. The active note's name gets
-	 * a marker like the current file in the File Explorer.
+	 * takes the link colour, paler with each hop, and its number of hops in
+	 * its dot. The active note's name gets a marker like the current file in
+	 * the File Explorer.
 	 */
 	private applyHighlight(center: boolean): void {
+		const g = this.graph;
 		for (const el of this.edgeEls.values()) {
 			el.removeClass("is-route", "is-main", "is-link", ...HOP_CLASSES);
 			if (el.hasAttribute("marker-end")) el.setAttr("marker-end", "url(#ldg-arrow)");
 		}
 		for (const el of this.nodeEls.values()) el.removeClass("is-route", "is-main", "is-active", "is-link", ...HOP_CLASSES);
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-marker"))) el.remove();
+		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-hop-num"))) {
+			const node = el.parentElement;
+			node?.find(".ldg-dot")?.setAttr("r", radius(g, node.getAttribute("data-id") ?? ""));
+			el.remove();
+		}
 
-		const g = this.graph;
 		const id = this.activePath;
 		const hl: Highlight | null = g && id ? pathToRoot(g, id) : null;
 		// Stop at the route: it has its own colour, and going on from the root would take everything.
@@ -434,7 +459,29 @@ export class TreeGraphView extends ItemView {
 				if (el.hasAttribute("marker-end")) el.setAttr("marker-end", `url(#ldg-arrow-${hopClass(hop)})`);
 				this.edgesEl.appendChild(el);
 			}
-			for (const [n, hop] of reach.nodes) this.nodeEls.get(n)?.addClass("is-link", hopClass(hop));
+			for (const [n, hop] of reach.nodes) {
+				const el = this.nodeEls.get(n);
+				const dot = el?.find(".ldg-dot");
+				if (!el || !dot) continue;
+				el.addClass("is-link", hopClass(hop));
+				dot.setAttr("r", numRadius(hop));
+				const num = createSvg("text", { cls: hop < 10 ? "ldg-hop-num" : ["ldg-hop-num", "is-wide"] });
+				num.textContent = String(hop);
+				dot.after(num);
+			}
+		}
+		// Lines within a row end at their target's dot: follow the numbered dots'
+		// size, so their arrowheads stay clear of it.
+		if (g) {
+			const r = (n: string) => {
+				const hop = reach?.nodes.get(n);
+				return hop === undefined ? radius(g, n) : numRadius(hop);
+			};
+			for (const e of g.edges) {
+				if (e.kind !== "same") continue;
+				const d = this.edgeD(e, r);
+				if (d !== null) this.edgeEls.get(edgeKey(e.from, e.to))?.setAttr("d", d);
+			}
 		}
 		if (hl && id) {
 			for (const key of hl.edges) {
@@ -953,6 +1000,7 @@ export class TreeGraphView extends ItemView {
 			),
 			active: this.activePath,
 			focus: this.plugin.settings.graphFocus,
+			focusHops: this.plugin.settings.graphFocusHops,
 			hidden: (this.full?.nodes.size ?? 0) - g.nodes.size,
 			route: hl ? route(hl.edges) : null,
 			main: hl ? route(hl.main) : null,
@@ -963,6 +1011,13 @@ export class TreeGraphView extends ItemView {
 				// per hop shade: [1, 2, 3, 4+]
 				linkEdges: byHop(".ldg-edge.is-link"),
 				linkNodes: HOP_CLASSES.map((h) => this.nodesEl.querySelectorAll(`.ldg-node.is-link.${h}`).length),
+				// note name → number in its dot
+				numbers: Object.fromEntries(
+					Array.from(this.nodesEl.querySelectorAll(".ldg-hop-num")).map((el) => [
+						name(el.parentElement?.getAttribute("data-id") ?? ""),
+						el.textContent,
+					]),
+				),
 				faint: count(".ldg-edge.is-same, .ldg-edge.is-up"),
 				activeNode: this.nodesEl.querySelectorAll(".ldg-node.is-active").length,
 				marker: this.nodesEl.querySelectorAll(".ldg-marker").length,

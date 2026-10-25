@@ -29,6 +29,8 @@ export interface LinkDirectorySettings {
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
 	graphFocus: boolean;
+	/** Tree graph, focus: also the notes the open note reaches by up to this many links (0 = any number). */
+	graphFocusHops: number;
 	/** Tree graph: run a short light along the coloured lines, base to tip. */
 	graphFlow: boolean;
 }
@@ -52,8 +54,17 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphLabels: "all",
 	graphMaxLength: 1200,
 	graphFocus: false,
+	graphFocusHops: 1,
 	graphFlow: true,
 };
+
+/** The hops offered for focus, 0 (every hop) last. */
+export const FOCUS_HOPS = [1, 2, 3, 4, 5, 0];
+
+export function hopsLabel(n: number): string {
+	if (n <= 0) return t("graphHopsAll");
+	return t(n === 1 ? "graphHop" : "graphHops").replace("{n}", String(n));
+}
 
 export class LinkDirectorySettingTab extends PluginSettingTab {
 	constructor(
@@ -269,8 +280,23 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 				tg.setValue(s.graphFocus).onChange((v) => {
 					s.graphFocus = v;
 					save();
+					this.display();
 				}),
 			);
+
+		if (s.graphFocus) {
+			new Setting(containerEl)
+				.setName(t("setGraphFocusHops"))
+				.setDesc(t("setGraphFocusHopsDesc"))
+				.addDropdown((d) => {
+					// One by one: an object of options would put "0" (every hop) first.
+					for (const n of FOCUS_HOPS) d.addOption(String(n), hopsLabel(n));
+					d.setValue(String(s.graphFocusHops)).onChange((v) => {
+						s.graphFocusHops = Number(v);
+						save();
+					});
+				});
+		}
 
 		new Setting(containerEl)
 			.setName(t("setGraphFlow"))
