@@ -8,6 +8,7 @@ import {
 	orderLayers,
 	pathToRoot,
 	place,
+	reachFrom,
 	type Direction,
 	type EdgeKind,
 	type GraphEdge,
@@ -15,6 +16,7 @@ import {
 	type Highlight,
 	type LayeredGraph,
 	type Point,
+	type Reach,
 } from "./layered";
 import type LinkDirectoryPlugin from "./main";
 
@@ -41,6 +43,10 @@ const MARGIN = 24;
 const ORPHAN_CAP = 200;
 const DRAG_SLOP = 4;
 const READABLE_SCALE = 0.75;
+/** Hops from the open note with a shade of their own; further ones share the last. */
+const HOP_LEVELS = 4;
+const HOP_CLASSES = Array.from({ length: HOP_LEVELS }, (_, i) => `hop-${i + 1}`);
+const hopClass = (hop: number) => `hop-${Math.min(hop, HOP_LEVELS)}`;
 
 /**
  * The link graph seen from one root note: a row per link distance, every note
@@ -146,10 +152,16 @@ export class TreeGraphView extends ItemView {
 		this.canvasEl = root.createDiv({ cls: "ldg-canvas" });
 		this.svgEl = this.canvasEl.createSvg("svg");
 		const defs = this.svgEl.createSvg("defs");
-		const marker = defs.createSvg("marker", {
-			attr: { id: "ldg-arrow", viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto" },
-		});
-		marker.createSvg("path", { cls: "ldg-arrow", attr: { d: "M0,0 L8,4 L0,8 z" } });
+		const arrow = (id: string, cls: string[], attr: Record<string, string>) =>
+			defs
+				.createSvg("marker", { attr: { id, viewBox: "0 0 8 8", refX: "7", refY: "4", orient: "auto", ...attr } })
+				.createSvg("path", { cls, attr: { d: "M0,0 L8,4 L0,8 z" } });
+		arrow("ldg-arrow", ["ldg-arrow"], { markerWidth: "7", markerHeight: "7" });
+		// One per hop shade, for reached links within a row / back up. Sized in
+		// graph units, so the arrowhead stays the same however thick the line is.
+		for (const hop of HOP_CLASSES) {
+			arrow(`ldg-arrow-${hop}`, ["ldg-arrow", "is-link", hop], { markerUnits: "userSpaceOnUse", markerWidth: "8", markerHeight: "8" });
+		}
 		this.viewportEl = this.svgEl.createSvg("g");
 		this.bandsEl = this.viewportEl.createSvg("g");
 		this.edgesEl = this.viewportEl.createSvg("g");
@@ -377,20 +389,37 @@ export class TreeGraphView extends ItemView {
 	/**
 	 * Colour the routes to the active note without re-laying out: the main
 	 * route in the full accent, the other shortest ones in a pale accent, the
-	 * rest of the lines dimmed. The active note's name gets a marker like the
-	 * current file in the File Explorer.
+	 * rest of the lines dimmed. Everything the active note reaches by links
+	 * takes the link colour, paler with each hop. The active note's name gets
+	 * a marker like the current file in the File Explorer.
 	 */
 	private applyHighlight(center: boolean): void {
-		for (const el of this.edgeEls.values()) el.removeClass("is-route", "is-main");
-		for (const el of this.nodeEls.values()) el.removeClass("is-route", "is-main", "is-active");
+		for (const el of this.edgeEls.values()) {
+			el.removeClass("is-route", "is-main", "is-link", ...HOP_CLASSES);
+			if (el.hasAttribute("marker-end")) el.setAttr("marker-end", "url(#ldg-arrow)");
+		}
+		for (const el of this.nodeEls.values()) el.removeClass("is-route", "is-main", "is-active", "is-link", ...HOP_CLASSES);
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-marker"))) el.remove();
 
 		const g = this.graph;
 		const id = this.activePath;
 		const hl: Highlight | null = g && id ? pathToRoot(g, id) : null;
-		this.svgEl.toggleClass("has-route", hl !== null && hl.edges.size > 0);
+		// Stop at the route: it has its own colour, and going on from the root would take everything.
+		const reach: Reach | null = g && id && hl ? reachFrom(g, id, hl.nodes) : null;
+		this.svgEl.toggleClass("has-highlight", (hl !== null && hl.edges.size > 0) || (reach !== null && reach.edges.size > 0));
+		// Re-append so coloured edges sit above the rest: the reached links far
+		// to near, then the routes, the main route on top.
+		if (reach) {
+			for (const [key, hop] of [...reach.edges].sort((a, b) => b[1] - a[1])) {
+				const el = this.edgeEls.get(key);
+				if (!el) continue;
+				el.addClass("is-link", hopClass(hop));
+				if (el.hasAttribute("marker-end")) el.setAttr("marker-end", `url(#ldg-arrow-${hopClass(hop)})`);
+				this.edgesEl.appendChild(el);
+			}
+			for (const [n, hop] of reach.nodes) this.nodeEls.get(n)?.addClass("is-link", hopClass(hop));
+		}
 		if (hl && id) {
-			// Re-append so coloured edges sit above the rest, the main route on top.
 			for (const key of hl.edges) {
 				const el = this.edgeEls.get(key);
 				if (!el) continue;
@@ -416,7 +445,7 @@ export class TreeGraphView extends ItemView {
 		const unreachable = g !== null && id !== null && hl === null;
 		this.noticeEl.toggle(unreachable);
 		if (unreachable) this.noticeEl.setText(t("graphUnreachable"));
-		this.renderLegend(hl);
+		this.renderLegend(hl, reach);
 		this.markActiveOrphan(unreachable && center);
 	}
 
@@ -430,7 +459,7 @@ export class TreeGraphView extends ItemView {
 		return createSvg("rect", { cls: "ldg-marker", attr: { x, y, width: w, height: h, rx: 4, ry: 4 } });
 	}
 
-	private renderLegend(hl: Highlight | null): void {
+	private renderLegend(hl: Highlight | null, reach: Reach | null): void {
 		const el = this.legendEl;
 		el.empty();
 		const g = this.graph;
@@ -449,6 +478,16 @@ export class TreeGraphView extends ItemView {
 		if (hl && hl.edges.size > 0) {
 			item("is-main", t("graphLegendRoute"));
 			if (hl.edges.size > hl.main.size) item("is-route", t("graphLegendRouteAlt"));
+		}
+		if (reach && reach.edges.size > 0) {
+			// One swatch per hop shown, the last shade standing for that many and more.
+			const it = el.createSpan({ cls: "ldg-legend-item" });
+			it.createSpan({ text: t("graphLegendOpenLinks") });
+			const top = Math.min(HOP_LEVELS, Math.max(...reach.edges.values()));
+			for (let h = 1; h <= top; h++) {
+				it.createSpan({ cls: ["ldg-swatch", "is-link", hopClass(h)] });
+				it.createSpan({ text: h === HOP_LEVELS ? `${h}+` : String(h) });
+			}
 		}
 		const hidden = (this.full?.nodes.size ?? 0) - g.nodes.size;
 		if (hidden > 0) el.createSpan({ cls: "ldg-legend-item", text: t("graphHidden").replace("{n}", String(hidden)) });
@@ -824,7 +863,9 @@ export class TreeGraphView extends ItemView {
 		const name = (id: string) => g.nodes.get(id)?.display ?? id;
 		const route = (keys: Iterable<string>) => [...keys].map((k) => k.split("\u0000").map(name).join(" → "));
 		const hl = this.activePath ? pathToRoot(g, this.activePath) : null;
+		const reach = this.activePath && hl ? reachFrom(g, this.activePath, hl.nodes) : null;
 		const count = (sel: string) => this.edgesEl.querySelectorAll(sel).length;
+		const byHop = (sel: string) => HOP_CLASSES.map((h) => count(`${sel}.${h}`));
 		return {
 			root: g.root,
 			layers: g.layers.map((l) => l.map(name)),
@@ -841,13 +882,17 @@ export class TreeGraphView extends ItemView {
 			hidden: (this.full?.nodes.size ?? 0) - g.nodes.size,
 			route: hl ? route(hl.edges) : null,
 			main: hl ? route(hl.main) : null,
+			reach: reach ? Object.fromEntries([...reach.nodes].map(([id, hop]) => [name(id), hop])) : null,
 			dom: {
 				route: count(".ldg-edge.is-route"),
 				main: count(".ldg-edge.is-main"),
+				// per hop shade: [1, 2, 3, 4+]
+				linkEdges: byHop(".ldg-edge.is-link"),
+				linkNodes: HOP_CLASSES.map((h) => this.nodesEl.querySelectorAll(`.ldg-node.is-link.${h}`).length),
 				faint: count(".ldg-edge.is-same, .ldg-edge.is-up"),
 				activeNode: this.nodesEl.querySelectorAll(".ldg-node.is-active").length,
 				marker: this.nodesEl.querySelectorAll(".ldg-marker").length,
-				dimmed: this.svgEl.hasClass("has-route"),
+				dimmed: this.svgEl.hasClass("has-highlight"),
 			},
 			notice: this.noticeEl.isShown(),
 			orphans: this.orphans.map((f) => f.path),

@@ -8,6 +8,7 @@ import {
 	orderLayers,
 	pathToRoot,
 	place,
+	reachFrom,
 	type LayeredGraph,
 	type Point,
 } from "./layered";
@@ -115,6 +116,58 @@ describe("pathToRoot", () => {
 		const g = buildLayers(fake({ R: ["A"], A: [], Lost: ["A"] }), "R.md", opts);
 		expect(pathToRoot(g, "R.md")?.edges.size).toBe(0);
 		expect(pathToRoot(g, "Lost.md")).toBeNull();
+	});
+});
+
+describe("reachFrom", () => {
+	const hopsOf = (m: Map<string, number>) => Object.fromEntries([...m].map(([k, v]) => [k.replace(/\.md/g, ""), v]));
+
+	it("follows links of links, counting hops from the open note", () => {
+		const g = buildLayers(fake({ R: ["A"], A: ["B"], B: ["C"], C: ["D"], D: [] }), "R.md", opts);
+		const r = reachFrom(g, "A.md");
+		expect(hopsOf(r.nodes)).toEqual({ B: 1, C: 2, D: 3 });
+		expect(hopsOf(r.edges)).toEqual({ "A\u0000B": 1, "B\u0000C": 2, "C\u0000D": 3 });
+	});
+
+	it("takes links within a row and back up, and merges lines into a note reached at the same hop", () => {
+		// A -> X, Y ; X -> Z ; Y -> Z (same hop: both drawn) ; Z -> X (back: not drawn) ; Y -> B (same row as A)
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["X", "Y"], B: ["W"], X: ["Z"], Y: ["Z", "B"], Z: ["X"], W: [] }), "R.md", opts);
+		const r = reachFrom(g, "A.md");
+		expect(hopsOf(r.nodes)).toEqual({ X: 1, Y: 1, Z: 2, B: 2, W: 3 });
+		expect(r.edges.get(edgeKey("X.md", "Z.md"))).toBe(2);
+		expect(r.edges.get(edgeKey("Y.md", "Z.md"))).toBe(2);
+		expect(r.edges.has(edgeKey("Z.md", "X.md"))).toBe(false);
+	});
+
+	it("goes into the route but not on from it, so a link back to the root does not take the whole graph", () => {
+		// A -> X -> R (up) ; R -> Other must not be reached through R.
+		const g = buildLayers(fake({ R: ["A", "Other"], A: ["X"], X: ["R"], Other: ["Far"], Far: [] }), "R.md", opts);
+		const route = pathToRoot(g, "A.md")?.nodes ?? new Set<string>();
+		const r = reachFrom(g, "A.md", route);
+		expect(hopsOf(r.nodes)).toEqual({ X: 1 });
+		expect(r.edges.get(edgeKey("X.md", "R.md"))).toBe(2);
+		expect(r.nodes.has("R.md")).toBe(false);
+	});
+
+	it("never overlaps the route into the open note", () => {
+		const g = buildLayers(fake(sketch), "R.md", opts);
+		const h = pathToRoot(g, "A.md");
+		const r = reachFrom(g, "A.md", h?.nodes);
+		expect(r.nodes.size).toBe(5);
+		expect([...r.edges.keys()].filter((k) => h?.edges.has(k))).toEqual([]);
+	});
+
+	it("from the root, the hops are the rows", () => {
+		const g = buildLayers(fake(sketch), "R.md", opts);
+		const r = reachFrom(g, "R.md", new Set(["R.md"]));
+		for (const [id, hop] of r.nodes) expect(hop).toBe(g.nodes.get(id)?.depth);
+		expect(r.nodes.size).toBe(g.nodes.size - 1);
+	});
+
+	it("is empty for a leaf and for a note outside the graph", () => {
+		const g = buildLayers(fake({ R: ["A"], A: [], Lost: ["A"] }), "R.md", opts);
+		expect(reachFrom(g, "A.md").edges.size).toBe(0);
+		expect(reachFrom(g, "Lost.md").edges.size).toBe(0);
 	});
 });
 

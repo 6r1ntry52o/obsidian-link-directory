@@ -332,6 +332,48 @@ export function pathToRoot(g: LayeredGraph, id: string): Highlight | null {
 	return { nodes, edges, main, mainNodes };
 }
 
+export interface Reach {
+	/** Every note `id` reaches by links, with how many links away it is (stop notes left out). */
+	nodes: Map<string, number>;
+	/** Every link on a shortest way there (edgeKey), with the hop it arrives at. */
+	edges: Map<string, number>;
+}
+
+/**
+ * Everything `id` reaches by following links (down, within a row or back up),
+ * in hops from `id`. A link into a note already reached at the same hop is
+ * kept, so the lines merge as in the layers. The walk goes into a `stop` note
+ * but not on from it: stopping at the route to `id` keeps a link back to the
+ * root from pulling in the whole graph. Stop notes keep their own colour, so
+ * only the links into them are returned.
+ */
+export function reachFrom(g: LayeredGraph, id: string, stop: ReadonlySet<string> = new Set()): Reach {
+	const nodes = new Map<string, number>();
+	const edges = new Map<string, number>();
+	if (!g.nodes.has(id)) return { nodes, edges };
+	const out = new Map<string, string[]>();
+	for (const e of g.edges) push(out, e.from, e.to);
+	const hops = new Map<string, number>([[id, 0]]);
+	for (let frontier = [id], h = 1; frontier.length > 0; h++) {
+		const next: string[] = [];
+		for (const from of frontier) {
+			for (const to of out.get(from) ?? []) {
+				const seen = hops.get(to);
+				if (seen === undefined) {
+					hops.set(to, h);
+					if (!stop.has(to)) {
+						nodes.set(to, h);
+						next.push(to);
+					}
+				} else if (seen !== h) continue;
+				edges.set(edgeKey(from, to), h);
+			}
+		}
+		frontier = next;
+	}
+	return { nodes, edges };
+}
+
 function positions(g: LayeredGraph): Map<string, number> {
 	const pos = new Map<string, number>();
 	for (const layer of g.layers) layer.forEach((id, i) => pos.set(id, i));

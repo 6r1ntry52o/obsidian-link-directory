@@ -105,11 +105,34 @@
 
 /* Route colours: the main route in the full accent, other shortest routes in
    a pale accent (mixed towards the background, so lighter in a light theme and
-   darker in a dark one), the open note's name on an accent-tinted box. */
+   darker in a dark one), the open note's name on an accent-tinted box.
+   What the open note reaches by links takes the accent turned a third of the
+   way round the colour wheel (Obsidian sets --accent-h/s/l from the accent
+   colour), so it reads apart from the route coming in whatever the accent is. */
 .ldg {
 	--ldg-route: var(--interactive-accent);
 	--ldg-route-alt: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-primary));
 	--ldg-marker: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
+	--ldg-link: hsl(calc(var(--accent-h, 254) - 120), var(--accent-s, 80%), var(--accent-l, 68%));
+}
+/* Each hop further from the open note mixes the link colour further into the
+   background (less saturated, and lighter or darker with the theme) on a
+   thinner line. The last shade stands for that many hops and more. */
+.ldg .hop-1 {
+	--ldg-hop: var(--ldg-link);
+	--ldg-hop-width: 2.2px;
+}
+.ldg .hop-2 {
+	--ldg-hop: color-mix(in srgb, var(--ldg-link) 75%, var(--background-primary));
+	--ldg-hop-width: 1.8px;
+}
+.ldg .hop-3 {
+	--ldg-hop: color-mix(in srgb, var(--ldg-link) 55%, var(--background-primary));
+	--ldg-hop-width: 1.5px;
+}
+.ldg .hop-4 {
+	--ldg-hop: color-mix(in srgb, var(--ldg-link) 38%, var(--background-primary));
+	--ldg-hop-width: 1.2px;
 }
 
 .workspace-leaf-content[data-type="link-directory-graph"] .view-content {
@@ -168,13 +191,22 @@
 .ldg-arrow {
 	fill: var(--text-faint);
 }
-/* While a route is shown, the other lines step back. */
-.ldg-canvas svg.has-route .ldg-edge {
+.ldg-arrow.is-link {
+	fill: var(--ldg-hop);
+}
+/* While a route or the open note's links are shown, the other lines step back. */
+.ldg-canvas svg.has-highlight .ldg-edge {
 	opacity: 0.45;
 }
-.ldg-canvas svg.has-route .ldg-edge.is-same,
-.ldg-canvas svg.has-route .ldg-edge.is-up {
+.ldg-canvas svg.has-highlight .ldg-edge.is-same,
+.ldg-canvas svg.has-highlight .ldg-edge.is-up {
 	opacity: 0.3;
+}
+/* Links the open note reaches, in any row (those within a row / back up stay dashed). */
+.ldg-canvas svg.has-highlight .ldg-edge.is-link {
+	stroke: var(--ldg-hop);
+	stroke-width: var(--ldg-hop-width);
+	opacity: 1;
 }
 /* Every shortest route to the open note: pale and thin; the first-found one full and thick. */
 .ldg-canvas svg .ldg-edge.is-route {
@@ -205,11 +237,18 @@
 .ldg-node.is-root .ldg-dot {
 	fill: var(--text-normal);
 }
+/* A note the open note reaches by links, shaded by hops. */
+.ldg-node.is-link .ldg-dot {
+	fill: var(--ldg-hop);
+}
 .ldg-node.is-unresolved .ldg-dot {
 	fill: var(--background-primary);
 	stroke: var(--graph-node-unresolved, var(--text-faint));
 	stroke-width: 1.2px;
 	stroke-dasharray: 2 2;
+}
+.ldg-node.is-unresolved.is-link .ldg-dot {
+	stroke: var(--ldg-hop);
 }
 .ldg-node.is-route .ldg-dot {
 	fill: var(--ldg-route-alt);
@@ -290,6 +329,11 @@
 }
 .ldg-swatch.is-route {
 	border-top: 2px solid var(--ldg-route-alt);
+}
+.ldg-swatch.is-link {
+	width: 14px;
+	margin-inline-start: 0.3em;
+	border-top: 2.5px solid var(--ldg-hop);
 }
 
 .ldg-notice {
