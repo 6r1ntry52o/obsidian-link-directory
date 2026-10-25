@@ -29,6 +29,8 @@ export interface LinkDirectorySettings {
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
 	graphFocus: boolean;
+	/** Tree graph: run a short light along the coloured lines, base to tip. */
+	graphFlow: boolean;
 }
 
 export const DEFAULT_SETTINGS: LinkDirectorySettings = {
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphLabels: "all",
 	graphMaxLength: 1200,
 	graphFocus: false,
+	graphFlow: true,
 };
 
 export class LinkDirectorySettingTab extends PluginSettingTab {
@@ -265,6 +268,16 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 			.addToggle((tg) =>
 				tg.setValue(s.graphFocus).onChange((v) => {
 					s.graphFocus = v;
+					save();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphFlow"))
+			.setDesc(t("setGraphFlowDesc"))
+			.addToggle((tg) =>
+				tg.setValue(s.graphFlow).onChange((v) => {
+					s.graphFlow = v;
 					save();
 				}),
 			);

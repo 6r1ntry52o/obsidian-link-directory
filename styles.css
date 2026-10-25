@@ -114,6 +114,7 @@
 	--ldg-route-alt: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-primary));
 	--ldg-marker: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
 	--ldg-link: hsl(calc(var(--accent-h, 254) - 120), var(--accent-s, 80%), var(--accent-l, 68%));
+	--ldg-flow: rgba(255, 255, 255, 0.9);
 }
 /* Each hop further from the open note mixes the link colour further into the
    background (less saturated, and lighter or darker with the theme) on a
@@ -157,7 +158,10 @@
 	min-height: 120px;
 	overflow: hidden;
 }
+/* Two SVGs on top of each other, the flowing light between them: lines, light, dots and names. */
 .ldg-canvas svg {
+	position: absolute;
+	inset: 0;
 	display: block;
 	width: 100%;
 	height: 100%;
@@ -402,4 +406,22 @@
 .ldg-band {
 	fill: var(--background-modifier-hover);
 	opacity: 0.7;
+}
+
+/* The light running along the coloured lines, base to tip: a short strip with
+   its bright end in front, moved by the compositor (transform and opacity only). */
+.ldg-flow {
+	position: absolute;
+	left: 0;
+	top: 0;
+	transform-origin: 0 0;
+	pointer-events: none;
+}
+.ldg-flow-strip {
+	position: absolute;
+	left: 0;
+	top: 0;
+	border-radius: 999px;
+	transform-origin: 100% 50%;
+	background: linear-gradient(to right, transparent, var(--ldg-flow));
 }

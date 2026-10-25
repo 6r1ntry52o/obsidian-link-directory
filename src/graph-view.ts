@@ -47,6 +47,13 @@ const READABLE_SCALE = 0.75;
 const HOP_LEVELS = 4;
 const HOP_CLASSES = Array.from({ length: HOP_LEVELS }, (_, i) => `hop-${i + 1}`);
 const hopClass = (hop: number) => `hop-${Math.min(hop, HOP_LEVELS)}`;
+/** The light along the coloured lines: strip length (short, so it keeps to bends), speed, rest between runs, fade at the ends. */
+const FLOW_LEN = 12;
+const FLOW_SPEED = 140;
+const FLOW_REST = 700;
+const FLOW_FADE = 8;
+/** Lines that get the light at most: each strip is a layer of its own. */
+const FLOW_CAP = 150;
 
 /**
  * The link graph seen from one root note: a row per link distance, every note
@@ -95,8 +102,13 @@ export class TreeGraphView extends ItemView {
 	private viewportEl!: SVGGElement;
 	private bandsEl!: SVGGElement;
 	private edgesEl!: SVGGElement;
+	private flowEl!: HTMLElement;
+	private nodesSvgEl!: SVGSVGElement;
+	private nodesViewportEl!: SVGGElement;
 	private nodesEl!: SVGGElement;
 	private emptyEl!: HTMLElement;
+	/** The running light strips (cancelled and rebuilt with the highlight). */
+	private flows: Animation[] = [];
 	private legendEl!: HTMLElement;
 	private noticeEl!: HTMLElement;
 	private orphansEl!: HTMLDetailsElement;
@@ -165,7 +177,12 @@ export class TreeGraphView extends ItemView {
 		this.viewportEl = this.svgEl.createSvg("g");
 		this.bandsEl = this.viewportEl.createSvg("g");
 		this.edgesEl = this.viewportEl.createSvg("g");
-		this.nodesEl = this.viewportEl.createSvg("g");
+		// The flowing light sits between the lines and the dots, so it passes
+		// under the names as the lines do: lines (SVG), light (HTML), dots and names (SVG).
+		this.flowEl = this.canvasEl.createDiv({ cls: "ldg-flow" });
+		this.nodesSvgEl = this.canvasEl.createSvg("svg");
+		this.nodesViewportEl = this.nodesSvgEl.createSvg("g");
+		this.nodesEl = this.nodesViewportEl.createSvg("g");
 		this.emptyEl = this.canvasEl.createDiv({ cls: "ld-empty", text: t("graphRootNone") });
 		this.bindCanvas();
 
@@ -176,7 +193,7 @@ export class TreeGraphView extends ItemView {
 
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", (leaf) => {
-				if (leaf && leaf !== this.leaf && leaf.view.getViewType() === "markdown") this.lastNoteLeaf = leaf;
+				if (leaf && this.isNoteTab(leaf)) this.lastNoteLeaf = leaf;
 			}),
 		);
 		this.registerEvent(this.app.workspace.on("file-open", (file) => this.onFileOpen(file)));
@@ -251,7 +268,7 @@ export class TreeGraphView extends ItemView {
 		const layoutKey = [g.root, s.graphDirection, s.graphLabels, s.graphMaxLength, s.graphFocus ? `focus:${route ?? ""}` : ""].join("|");
 		if (layoutKey !== this.layoutKey) this.fitted = false;
 		this.layoutKey = layoutKey;
-		this.svgEl.toggleClass("is-names-route", !allNames);
+		this.nodesSvgEl.toggleClass("is-names-route", !allNames);
 
 		const { measure, lineHeight } = this.measurer();
 		this.lineHeight = lineHeight;
@@ -441,12 +458,46 @@ export class TreeGraphView extends ItemView {
 			}
 			if (center) this.ensureVisible(id);
 		}
+		this.drawFlow(hl, reach);
 
 		const unreachable = g !== null && id !== null && hl === null;
 		this.noticeEl.toggle(unreachable);
 		if (unreachable) this.noticeEl.setText(t("graphUnreachable"));
 		this.renderLegend(hl, reach);
 		this.markActiveOrphan(unreachable && center);
+	}
+
+	/**
+	 * A short light runs along each coloured line from base to tip, to show
+	 * which way it points. Each strip is moved by transform keyframes sampled
+	 * along its line, which the compositor runs on its own: drawing the light
+	 * into the SVG instead repaints the whole graph every frame (about five
+	 * times the CPU, measured). Route first, then by hops, up to FLOW_CAP lines.
+	 */
+	private drawFlow(hl: Highlight | null, reach: Reach | null): void {
+		for (const a of this.flows) a.cancel();
+		this.flows = [];
+		this.flowEl.empty();
+		const g = this.graph;
+		if (!g || !this.plugin.settings.graphFlow || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		const right = this.plugin.settings.graphDirection === "right";
+		const near = [...(reach?.edges ?? [])].sort((a, b) => a[1] - b[1]).map(([key]) => key);
+		const keys = new Set([...(hl?.main ?? []), ...(hl?.edges ?? []), ...near]);
+		for (const key of [...keys].slice(0, FLOW_CAP)) {
+			const el = this.edgeEls.get(key);
+			const from = key.split("\u0000")[0] ?? "";
+			const a = this.points.get(from);
+			if (!el || !a) continue;
+			// A line down the rows leaves under its note's name: start the light past the names.
+			const port = this.ports[g.nodes.get(from)?.depth ?? 0] ?? 0;
+			const start = el.hasClass("is-down") ? Math.max(0, port - (right ? a.x : a.y) - radius(g, from)) : 0;
+			const width = Number.parseFloat(getComputedStyle(el).strokeWidth) || 2;
+			const run = flowFrames(el, start, width);
+			if (!run) continue;
+			const strip = this.flowEl.createDiv({ cls: "ldg-flow-strip" });
+			strip.setCssStyles({ width: `${FLOW_LEN}px`, height: `${width}px` });
+			this.flows.push(strip.animate(run.frames, { duration: run.duration, iterations: Infinity }));
+		}
 	}
 
 	/** A filled box behind the active note's name (drawn under its dot and name). */
@@ -544,7 +595,10 @@ export class TreeGraphView extends ItemView {
 	// ----------------------------------------------------------- pan & zoom
 
 	private applyTransform(): void {
-		this.viewportEl.setAttr("transform", `translate(${this.tx} ${this.ty}) scale(${this.k})`);
+		const transform = `translate(${this.tx} ${this.ty}) scale(${this.k})`;
+		this.viewportEl.setAttr("transform", transform);
+		this.nodesViewportEl.setAttr("transform", transform);
+		this.flowEl.setCssStyles({ transform: `translate(${this.tx}px, ${this.ty}px) scale(${this.k})` });
 	}
 
 	private zoomAt(cx: number, cy: number, factor: number): void {
@@ -600,7 +654,8 @@ export class TreeGraphView extends ItemView {
 	}
 
 	private bindCanvas(): void {
-		const svg = this.svgEl;
+		// On the canvas: the dots and names lie in their own SVG on top of the lines.
+		const svg = this.canvasEl;
 		const pts = new Map<number, { x: number; y: number }>();
 		let downNode: string | null = null;
 		let moved = 0;
@@ -738,14 +793,33 @@ export class TreeGraphView extends ItemView {
 		}, 400);
 	}
 
-	/** The note pane to open into: never this view's own leaf. */
+	/**
+	 * The tab to open into: the one used last in the main area, whatever it
+	 * shows (a note, a drawing, a base, a new tab), as the File Explorer does.
+	 * A pinned tab is kept: the note opens in a new tab beside it. Never this
+	 * view's own leaf.
+	 */
 	private targetLeaf(ev: MouseEvent): WorkspaceLeaf {
 		const ws = this.app.workspace;
 		const mod = Keymap.isModEvent(ev);
 		if (mod) return ws.getLeaf(mod);
-		const notes = ws.getLeavesOfType("markdown").filter((l) => l !== this.leaf);
-		if (this.lastNoteLeaf && notes.includes(this.lastNoteLeaf)) return this.lastNoteLeaf;
-		return notes[0] ?? ws.getLeaf("split", "vertical");
+		const tabs: WorkspaceLeaf[] = [];
+		ws.iterateAllLeaves((l) => {
+			if (this.isNoteTab(l)) tabs.push(l);
+		});
+		const recent = ws.getMostRecentLeaf();
+		const last = [this.lastNoteLeaf, recent].find((l) => l && tabs.includes(l)) ?? tabs[0];
+		if (!last) return ws.getLeaf("split", "vertical");
+		if (!last.getViewState().pinned) return last;
+		ws.setActiveLeaf(last, { focus: false });
+		return ws.getLeaf("tab");
+	}
+
+	/** A tab a note can open in: in the main area or a pop-out window (not a sidebar), and not this view. */
+	private isNoteTab(leaf: WorkspaceLeaf): boolean {
+		const ws = this.app.workspace;
+		const root = leaf.getRoot();
+		return leaf !== this.leaf && root !== ws.leftSplit && root !== ws.rightSplit && (leaf.isDeferred || leaf.view.navigation);
 	}
 
 	private showMenu(file: TFile, ev: MouseEvent): void {
@@ -893,6 +967,7 @@ export class TreeGraphView extends ItemView {
 				activeNode: this.nodesEl.querySelectorAll(".ldg-node.is-active").length,
 				marker: this.nodesEl.querySelectorAll(".ldg-marker").length,
 				dimmed: this.svgEl.hasClass("has-highlight"),
+				flow: this.flows.length,
 			},
 			notice: this.noticeEl.isShown(),
 			orphans: this.orphans.map((f) => f.path),
@@ -973,6 +1048,38 @@ function edgePath(
 	const x1 = a.x - ra;
 	const x2 = b.x - rb;
 	return `M${x1},${a.y} Q${Math.min(x1, x2) - bow},${(a.y + b.y) / 2} ${x2},${b.y}`;
+}
+
+/**
+ * Keyframes moving a light strip along `path` from `start` to its end at
+ * FLOW_SPEED: its head on the line and turned along it, fading in and out at
+ * the ends, then resting for FLOW_REST. Null when the run is shorter than the strip.
+ */
+function flowFrames(path: SVGPathElement, start: number, width: number): { frames: Keyframe[]; duration: number } | null {
+	const len = path.getTotalLength();
+	const run = len - start;
+	if (run < FLOW_LEN) return null;
+	const travel = (run / FLOW_SPEED) * 1000;
+	const duration = travel + FLOW_REST;
+	const steps = Math.min(48, Math.max(3, Math.ceil(run / 8)));
+	const frames: Keyframe[] = [];
+	let prev: number | null = null;
+	let transform = "";
+	for (let i = 0; i <= steps; i++) {
+		const s = start + (run * i) / steps;
+		const p = path.getPointAtLength(s);
+		const p0 = path.getPointAtLength(Math.max(0, s - 1));
+		const p1 = path.getPointAtLength(Math.min(len, s + 1));
+		let deg = (Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180) / Math.PI;
+		// Unwrap, so the strip never spins the long way round between two samples.
+		if (prev !== null) deg += 360 * Math.round((prev - deg) / 360);
+		prev = deg;
+		transform = `translate(${p.x - FLOW_LEN}px, ${p.y - width / 2}px) rotate(${deg.toFixed(1)}deg)`;
+		const opacity = Math.max(0, Math.min(1, (s - start) / FLOW_FADE, (len - s) / FLOW_FADE));
+		frames.push({ offset: ((i / steps) * travel) / duration, transform, opacity });
+	}
+	frames.push({ offset: 1, transform, opacity: 0 });
+	return { frames, duration };
 }
 
 function truncate(text: string, max: number, measure: (s: string) => number): string {

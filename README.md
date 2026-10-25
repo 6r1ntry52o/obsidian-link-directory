@@ -33,9 +33,10 @@ A second view (ribbon icon *network*, command **Open tree graph**) draws the sam
 - Links **within a row** or **back up** to a shallower row are always drawn, but thin and dashed with an arrowhead, so they read as secondary.
 - The **routes from the root to the open note** stand out by colour strength as well as width: the first-found route thick in the full accent colour (its names too), every other shortest route thin in a pale accent, and the remaining lines step back. The open note's name is marked like the current file in the File Explorer, and the graph pans to it when it is off screen (auto-reveal).
 - **Everything the open note reaches by links** (the notes it links to, the notes those link to, and so on, in any row) takes a second colour, the accent turned a third of the way round the colour wheel, so where the note leads reads apart from the route coming in. Each hop further is paler and thinner (1, 2, 3, then 4 and more share the last shade), so the legend's numbers read as "this many links away". The walk does not go on through the route: a link back to the root is coloured, but what the root links to is not, or a note that links back to TOP would colour the whole graph. A CSS snippet can set `--ldg-link` on `.ldg` to choose another colour.
+- A short **light runs along each coloured line**, from base to tip, so the direction reads at a glance. It passes under the dots and names as the lines do, and stops when the system asks for reduced motion; it can be turned off in the settings. At most 150 lines carry it, the route first.
 - **Focus** (header button, or *Only the route and its links* in the settings) hides every note that is neither on a route from the root to the open note nor linked from a note on it, and lays the rest out again: a large graph shrinks to the path and what branches off it. Rows keep their link distance. Without a route (no note open, or one the root cannot reach) it shows the root and its links; the legend counts the hidden notes.
 - Notes in the root's folder (or a folder you choose) that the root **cannot reach** are listed under the graph, newest first. Opening one shows a notice and highlights it in the list; no route is drawn.
-- Drag to pan, wheel or pinch to zoom, the *Fit* button shows everything. Click a node to open it beside the graph; click an unresolved node to create the note. Right-click / long-press: *Set as tree graph root*, *Open in new tab*, file menu.
+- Drag to pan, wheel or pinch to zoom, the *Fit* button shows everything. Click a node to open it beside the graph, in the tab you used last, whatever it shows (a note, a drawing, a base, a new tab), as the File Explorer does; a pinned tab is kept and the note opens in a new tab beside it, and Ctrl/Cmd-click opens a new tab. Click an unresolved node to create the note. Right-click / long-press: *Set as tree graph root*, *Open in new tab*, file menu.
 - It opens in a split next to your notes, so the highlight follows you as you navigate.
 
 ## Installation
@@ -63,6 +64,7 @@ A second view (ribbon icon *network*, command **Open tree graph**) draws the sam
 | Tree graph → Note names | every note | or route only (others on hover) |
 | Tree graph → Wrap long rows (px) | 1200 | 0 = never wrap |
 | Tree graph → Only the route and its links | off | hide notes off the route and the notes it links to |
+| Tree graph → Flowing light on the coloured lines | on | not shown with the system's reduced motion |
 
 ## Development
 
@@ -84,3 +86,5 @@ The design follows conventions found in IDE call hierarchies (IntelliJ), depende
 - reveal follows **one canonical (shortest) path** and highlights every occurrence.
 
 The tree graph is a layered (Sugiyama-style) drawing with the layers fixed by BFS depth. Because a link from row d can only land in row d+1, d or above, no edge skips a row, so no dummy nodes are needed; the only layout work is ordering each row to reduce crossings (barycenter sweeps, keeping the best). Row 1 keeps the root's link order. A long row wraps column-major (order kept, a parent's children stay in one block), with sub-rows staggered so lines reach the lower ones between the dots above; rows are added until the folded row really fits the limit. Layers are spaced by how far their names reach (`place()` takes a per-node depth and returns where each layer starts and where its lines leave).
+
+The flowing light is a set of short HTML strips between two SVGs (lines below, dots and names above), each moved by `transform` / `opacity` keyframes sampled along its line, so the compositor runs it without repainting anything: about 3% of one core for 18 lines on a desktop, against five times that for a dash animated inside the SVG, which repaints the whole graph every frame.

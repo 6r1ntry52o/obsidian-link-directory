@@ -61,6 +61,9 @@ const en = {
 	setGraphFocus: "Only the route and its links",
 	setGraphFocusDesc:
 		"Hide notes that are neither on the route from the root to the open note nor linked from a note on it. Without a route: the root and the notes it links to.",
+	setGraphFlow: "Flowing light on the coloured lines",
+	setGraphFlowDesc:
+		"A short light runs along the route and the links the open note reaches, from base to tip, so the direction reads at a glance. Not shown when the system asks for reduced motion.",
 	graphTruncated: "Stopped at the search limit",
 	graphUnreachable: "The open note cannot be reached from the root.",
 	graphOrphans: "Not reachable from the root",
@@ -158,6 +161,9 @@ const ja: typeof en = {
 	setGraphFocus: "道筋の周りだけ表示",
 	setGraphFocusDesc:
 		"ルート→開いているノートの道筋にも、道筋のノートからのリンク先にもないノートを隠す。道筋がないときは、ルートとそのリンク先だけ。",
+	setGraphFlow: "色付きの線に光を流す",
+	setGraphFlowDesc:
+		"道筋と、開いているノートから辿れるリンクに、根本から先端へ短い光を流して向きを示す。OS でアニメーションを切っているときは流さない。",
 	graphTruncated: "探索上限で打ち切りました",
 	graphUnreachable: "開いているノートはルートから辿れません。",
 	graphOrphans: "ルートから辿れないノート",
