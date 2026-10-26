@@ -173,6 +173,35 @@ export function orderLayers(g: LayeredGraph, sweeps = 4): void {
 }
 
 /**
+ * Orders layers 1+ into groups: each note sits with the other notes linked
+ * from the same note one layer up, in the order that note links them, and the
+ * groups follow the layer above. A note linked from several goes with the
+ * first of them in the layer above (the top one growing right, the left one
+ * growing down). On a whole graph this is the order the walk found the notes
+ * in. Returns each note's group (the note it goes with); a note no note in
+ * the layer above links to (a focused graph can leave one) has none and goes
+ * last.
+ */
+export function groupLayers(g: LayeredGraph): Map<string, string> {
+	const childrenOf = new Map<string, string[]>();
+	for (const e of g.edges) if (e.kind === "down") push(childrenOf, e.from, e.to);
+	const owners = new Map<string, string>();
+	for (let d = 1; d < g.layers.length; d++) {
+		const rest = new Set(g.layers[d]);
+		const grouped: string[] = [];
+		for (const p of g.layers[d - 1] as string[]) {
+			for (const c of childrenOf.get(p) ?? []) {
+				if (!rest.delete(c)) continue;
+				owners.set(c, p);
+				grouped.push(c);
+			}
+		}
+		g.layers[d] = [...grouped, ...rest];
+	}
+	return owners;
+}
+
+/**
  * The part of the graph around a route: the route's notes and every note one
  * of them links to (down, within a layer or back up), and the notes `from`
  * (the open note, on the route) reaches by up to `hops` links (0 = any
@@ -307,15 +336,14 @@ export interface Highlight {
 	nodes: Set<string>;
 	/** Every edge on some shortest path (edgeKey). */
 	edges: Set<string>;
-	/** The one path through the BFS tree parents (drawn thick). */
-	main: Set<string>;
-	mainNodes: Set<string>;
 }
 
-/** All shortest paths from the root to `id`, or null when the root cannot reach it. */
+/**
+ * All shortest paths from the root to `id`, or null when the root cannot
+ * reach it. They are all equally short, so none of them comes first.
+ */
 export function pathToRoot(g: LayeredGraph, id: string): Highlight | null {
-	const start = g.nodes.get(id);
-	if (!start) return null;
+	if (!g.nodes.has(id)) return null;
 	const nodes = new Set<string>([id]);
 	const edges = new Set<string>();
 	for (const stack = [id]; stack.length > 0; ) {
@@ -328,14 +356,7 @@ export function pathToRoot(g: LayeredGraph, id: string): Highlight | null {
 			}
 		}
 	}
-	const main = new Set<string>();
-	const mainNodes = new Set<string>([id]);
-	for (let n: GraphNode | undefined = start; n && n.parents.length > 0; n = g.nodes.get(n.parents[0] as string)) {
-		const p = n.parents[0] as string;
-		main.add(edgeKey(p, n.id));
-		mainNodes.add(p);
-	}
-	return { nodes, edges, main, mainNodes };
+	return { nodes, edges };
 }
 
 export interface Reach {

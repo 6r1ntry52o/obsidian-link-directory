@@ -5,6 +5,7 @@ import {
 	countCrossings,
 	edgeKey,
 	focusOn,
+	groupLayers,
 	orderLayers,
 	pathToRoot,
 	place,
@@ -97,13 +98,47 @@ describe("orderLayers", () => {
 	});
 });
 
+describe("groupLayers", () => {
+	it("puts each note with the first note above that links to it, in that note's link order", () => {
+		const g = buildLayers(fake(sketch), "R.md", opts);
+		const found = names(g);
+		orderLayers(g);
+		const owners = groupLayers(g);
+		// on a whole graph: the order the walk found the notes in
+		expect(names(g)).toEqual(found);
+		expect(names(g)[2]).toEqual(["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8"]);
+		// G5 is linked from A–D and goes with A, the first
+		expect(["G1", "G3", "G5", "G6", "G8"].map((n) => owners.get(`${n}.md`))).toEqual(["A.md", "A.md", "A.md", "D.md", "D.md"]);
+		expect(owners.get("A.md")).toBe("R.md");
+		expect(owners.has("R.md")).toBe(false);
+
+		const h = buildLayers(fake({ R: ["A", "B"], A: ["Y", "X"], B: ["Z", "X"], X: [], Y: [], Z: [] }), "R.md", opts);
+		groupLayers(h);
+		expect(names(h)[2]).toEqual(["Y", "X", "Z"]);
+	});
+
+	it("follows the layer above when a note's first link is hidden, and puts a note with none last", () => {
+		// open Y: route R → B → D → Y. C is hidden, so X goes with D, after Y as D
+		// links them; Q is only linked within its row (from Y), so it has no group
+		const adj = { R: ["A", "B"], A: ["C"], C: ["X", "Q"], B: ["D"], D: ["Y", "X"], Y: ["Q"], X: [], Q: [] };
+		const g = buildLayers(fake(adj), "R.md", opts);
+		const f = focusOn(g, pathToRoot(g, "Y.md")?.nodes ?? new Set());
+		expect(names(f)).toEqual([["R"], ["A", "B"], ["D"], ["X", "Q", "Y"]]);
+		const owners = groupLayers(f);
+		expect(names(f)[3]).toEqual(["Y", "X", "Q"]);
+		expect(owners.get("X.md")).toBe("D.md");
+		expect(owners.has("Q.md")).toBe(false);
+	});
+});
+
 describe("pathToRoot", () => {
-	it("colours every shortest path and marks the BFS-parent path as main", () => {
+	it("colours every shortest path, none before the others", () => {
 		const g = buildLayers(fake(sketch), "R.md", opts);
 		const h = pathToRoot(g, "G5.md");
+		// R → A, B, C, D → G5: four routes of the same length
 		expect(h?.edges.size).toBe(8);
-		expect([...(h?.main ?? [])]).toEqual([edgeKey("A.md", "G5.md"), edgeKey("R.md", "A.md")]);
-		expect([...(h?.mainNodes ?? [])].sort()).toEqual(["A.md", "G5.md", "R.md"]);
+		expect([...(h?.nodes ?? [])].sort()).toEqual(["A.md", "B.md", "C.md", "D.md", "G5.md", "R.md"]);
+		expect(h?.edges.has(edgeKey("D.md", "G5.md"))).toBe(true);
 	});
 
 	it("does not colour links within a layer or back up", () => {
@@ -240,7 +275,7 @@ describe("focusOn", () => {
 		const f = focusOn(g, full?.nodes ?? new Set());
 		const part = pathToRoot(f, "G5.md");
 		expect([...(part?.edges ?? [])].sort()).toEqual([...(full?.edges ?? [])].sort());
-		expect([...(part?.main ?? [])]).toEqual([...(full?.main ?? [])]);
+		expect([...(part?.nodes ?? [])].sort()).toEqual([...(full?.nodes ?? [])].sort());
 	});
 });
 

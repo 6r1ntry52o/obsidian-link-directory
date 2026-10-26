@@ -1,7 +1,7 @@
 {
   "id": "link-directory",
   "name": "Link Directory",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "minAppVersion": "1.10.0",
   "description": "Browse the outgoing-link structure of your notes as a directory tree styled like the File Explorer, or as a layered tree graph seen from a root note.",
   "author": "6r1ntr",

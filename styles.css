@@ -103,15 +103,14 @@
 
 /* ---------------------------------------------------------------- Tree graph */
 
-/* Route colours: the main route in the full accent, other shortest routes in
-   a pale accent (mixed towards the background, so lighter in a light theme and
-   darker in a dark one), the open note's name on an accent-tinted box.
+/* Route colours: every shortest route in the full accent, the open note's
+   name on an accent-tinted box (mixed towards the background, so lighter in a
+   light theme and darker in a dark one).
    What the open note reaches by links takes the accent turned a third of the
    way round the colour wheel (Obsidian sets --accent-h/s/l from the accent
    colour), so it reads apart from the route coming in whatever the accent is. */
 .ldg {
 	--ldg-route: var(--interactive-accent);
-	--ldg-route-alt: color-mix(in srgb, var(--interactive-accent) 40%, var(--background-primary));
 	--ldg-marker: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
 	--ldg-link: hsl(calc(var(--accent-h, 254) - 120), var(--accent-s, 80%), var(--accent-l, 68%));
 	--ldg-flow: rgba(255, 255, 255, 0.9);
@@ -219,15 +218,11 @@
 	stroke-width: var(--ldg-hop-width);
 	opacity: 1;
 }
-/* Every shortest route to the open note: pale and thin; the first-found one full and thick. */
+/* Every shortest route to the open note, alike: they are equally short. */
 .ldg-canvas svg .ldg-edge.is-route {
-	stroke: var(--ldg-route-alt);
-	stroke-width: 2px;
-	opacity: 1;
-}
-.ldg-canvas svg .ldg-edge.is-main {
 	stroke: var(--ldg-route);
 	stroke-width: 3.5px;
+	opacity: 1;
 }
 
 /* Nodes are dots, coloured like the core Graph view. */
@@ -287,9 +282,6 @@
 	fill: var(--text-muted);
 }
 .ldg-node.is-route .ldg-dot {
-	fill: var(--ldg-route-alt);
-}
-.ldg-node.is-main .ldg-dot {
 	fill: var(--ldg-route);
 }
 .ldg-node.is-active .ldg-dot {
@@ -318,8 +310,8 @@
 .ldg-node.is-active .ldg-label {
 	font-weight: var(--font-semibold);
 }
-/* Names along the main route take the accent too, so the route reads from its names. */
-.ldg-node.is-main .ldg-label {
+/* Names along the routes take the accent too, so a route reads from its names. */
+.ldg-node.is-route .ldg-label {
 	fill: var(--text-accent);
 }
 .ldg-node.is-active .ldg-label {
@@ -360,16 +352,24 @@
 .ldg-swatch.is-faint {
 	border-top: 1px dashed var(--text-faint);
 }
-.ldg-swatch.is-main {
-	border-top: 3px solid var(--ldg-route);
-}
 .ldg-swatch.is-route {
-	border-top: 2px solid var(--ldg-route-alt);
+	border-top: 3px solid var(--ldg-route);
 }
 .ldg-swatch.is-link {
 	width: 14px;
 	margin-inline-start: 0.3em;
 	border-top: 2.5px solid var(--ldg-hop);
+}
+.ldg-swatch.is-group {
+	width: 18px;
+	height: 10px;
+	border: 0;
+	border-radius: 3px;
+	background: linear-gradient(
+		to right,
+		color-mix(in srgb, var(--color-blue) 22%, transparent) 50%,
+		color-mix(in srgb, var(--color-orange) 22%, transparent) 50%
+	);
 }
 
 .ldg-notice {
@@ -439,6 +439,24 @@
 	fill: var(--background-modifier-hover);
 	opacity: 0.7;
 }
+
+/* A background colour per group of notes linked from the same note one row
+   up, taken in turn along the row (on the band, behind lines and dots). */
+.ldg-group {
+	fill: var(--ldg-group);
+	fill-opacity: 0.14;
+}
+.theme-dark .ldg-group {
+	fill-opacity: 0.2;
+}
+.ldg-group.is-group-0 { --ldg-group: var(--color-blue); }
+.ldg-group.is-group-1 { --ldg-group: var(--color-orange); }
+.ldg-group.is-group-2 { --ldg-group: var(--color-green); }
+.ldg-group.is-group-3 { --ldg-group: var(--color-pink); }
+.ldg-group.is-group-4 { --ldg-group: var(--color-cyan); }
+.ldg-group.is-group-5 { --ldg-group: var(--color-yellow); }
+.ldg-group.is-group-6 { --ldg-group: var(--color-purple); }
+.ldg-group.is-group-7 { --ldg-group: var(--color-red); }
 
 /* The light running along the coloured lines, base to tip: a short strip with
    its bright end in front, moved by the compositor (transform and opacity only). */

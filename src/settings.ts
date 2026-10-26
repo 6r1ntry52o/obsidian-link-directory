@@ -25,6 +25,8 @@ export interface LinkDirectorySettings {
 	graphDirection: Direction;
 	/** Tree graph: show every note name, or only those on the route to the open note. */
 	graphLabels: "all" | "route";
+	/** Tree graph: keep the notes linked from the same note together, on a background colour. */
+	graphGroups: boolean;
 	/** Tree graph: wrap a layer longer than this many pixels (0 = never). */
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphOrphanScope: "",
 	graphDirection: "down",
 	graphLabels: "all",
+	graphGroups: true,
 	graphMaxLength: 1200,
 	graphFocus: false,
 	graphFocusHops: 1,
@@ -271,6 +274,16 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 						s.graphLabels = v as "all" | "route";
 						save();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphGroups"))
+			.setDesc(t("setGraphGroupsDesc"))
+			.addToggle((tg) =>
+				tg.setValue(s.graphGroups).onChange((v) => {
+					s.graphGroups = v;
+					save();
+				}),
 			);
 
 		new Setting(containerEl)

@@ -5,6 +5,7 @@ import {
 	buildLayers,
 	edgeKey,
 	focusOn,
+	groupLayers,
 	orderLayers,
 	pathToRoot,
 	place,
@@ -59,6 +60,8 @@ const FLOW_REST = 700;
 const FLOW_FADE = 8;
 /** Lines that get the light at most: each strip is a layer of its own. */
 const FLOW_CAP = 150;
+/** Background colours the groups take in turn, row after row (`.is-group-0` to `-7` in styles.css). */
+const GROUP_COLOURS = 8;
 
 /**
  * The link graph seen from one root note: a row per link distance, every note
@@ -75,6 +78,8 @@ export class TreeGraphView extends ItemView {
 	private full: LayeredGraph | null = null;
 	/** The open note the focused layout was made for (undefined = not focused). */
 	private focusedOn: string | null | undefined = undefined;
+	/** The note each drawn note goes with (groupLayers), or null when rows are not grouped. */
+	private owners: Map<string, string> | null = null;
 	private points = new Map<string, Point>();
 	/** Per layer, from place(): where lines come in, and where they leave (past its names). */
 	private starts: number[] = [];
@@ -101,6 +106,7 @@ export class TreeGraphView extends ItemView {
 	private pinBtnEl!: HTMLElement;
 	private dirBtnEl!: HTMLElement;
 	private namesBtnEl!: HTMLElement;
+	private groupsBtnEl!: HTMLElement;
 	private focusBtnEl!: HTMLElement;
 	private hopsEl!: HTMLSelectElement;
 	private canvasEl!: HTMLElement;
@@ -156,6 +162,11 @@ export class TreeGraphView extends ItemView {
 		this.namesBtnEl = this.actionButton(buttons, "tags", "", () => {
 			const s = this.plugin.settings;
 			s.graphLabels = s.graphLabels === "all" ? "route" : "all";
+			void this.plugin.saveSettings();
+		});
+		this.groupsBtnEl = this.actionButton(buttons, "group", "", () => {
+			const s = this.plugin.settings;
+			s.graphGroups = !s.graphGroups;
 			void this.plugin.saveSettings();
 		});
 		this.focusBtnEl = this.actionButton(buttons, "focus", "", () => {
@@ -250,6 +261,7 @@ export class TreeGraphView extends ItemView {
 		if (!rootFile) {
 			this.graph = null;
 			this.full = null;
+			this.owners = null;
 			this.orphans = [];
 			this.emptyEl.setText(this.following ? t("graphRootNoneActive") : t("graphRootNone"));
 			this.emptyEl.show();
@@ -261,7 +273,13 @@ export class TreeGraphView extends ItemView {
 
 		const s = this.plugin.settings;
 		const full = buildLayers(new MetadataLinkSource(this.app), rootFile.path, s);
-		orderLayers(full);
+		// Group each row by the note linking to it, or order it to cross fewer lines.
+		const arrange = (lg: LayeredGraph): Map<string, string> | null => {
+			if (s.graphGroups) return groupLayers(lg);
+			orderLayers(lg);
+			return null;
+		};
+		this.owners = arrange(full);
 		this.full = full;
 		// Focus: only the route to the open note, the notes linked from it and
 		// what the open note reaches within the chosen hops (the root and its
@@ -272,7 +290,7 @@ export class TreeGraphView extends ItemView {
 			const hl = this.activePath ? pathToRoot(full, this.activePath) : null;
 			route = hl ? this.activePath : null;
 			g = focusOn(full, hl?.nodes ?? new Set([full.root]), route ?? undefined, s.graphFocusHops);
-			orderLayers(g);
+			this.owners = arrange(g);
 		}
 		this.focusedOn = s.graphFocus ? this.activePath : undefined;
 		this.graph = g;
@@ -280,7 +298,14 @@ export class TreeGraphView extends ItemView {
 		const right = s.graphDirection === "right";
 		const allNames = s.graphLabels === "all";
 		// A new root, a different layout or (focused) another route starts from a fresh fit.
-		const layoutKey = [g.root, s.graphDirection, s.graphLabels, s.graphMaxLength, s.graphFocus ? `focus:${route ?? ""}:${s.graphFocusHops}` : ""].join("|");
+		const layoutKey = [
+			g.root,
+			s.graphDirection,
+			s.graphLabels,
+			s.graphMaxLength,
+			s.graphGroups,
+			s.graphFocus ? `focus:${route ?? ""}:${s.graphFocusHops}` : "",
+		].join("|");
 		if (layoutKey !== this.layoutKey) this.fitted = false;
 		this.layoutKey = layoutKey;
 		this.nodesSvgEl.toggleClass("is-names-route", !allNames);
@@ -315,6 +340,7 @@ export class TreeGraphView extends ItemView {
 		this.starts = placed.starts;
 		this.ports = placed.ports;
 		this.drawBands(g, right, depth);
+		if (this.owners) this.drawGroups(g, this.owners, right, depth);
 		for (const e of g.edges) this.drawEdge(e);
 		for (const n of g.nodes.values()) this.drawNode(n, labels.get(n.id) ?? n.display, right);
 
@@ -331,27 +357,69 @@ export class TreeGraphView extends ItemView {
 		const pad = 10;
 		g.layers.forEach((layer, d) => {
 			if (d === 0) return;
-			let x0 = Infinity;
-			let x1 = -Infinity;
-			let y0 = Infinity;
-			let y1 = -Infinity;
+			let u0 = Infinity;
+			let u1 = -Infinity;
+			let v0 = Infinity;
+			let v1 = -Infinity;
 			for (const id of layer) {
 				const p = this.points.get(id);
 				if (!p) continue;
-				const [l, r, t, b] = right
-					? [p.x - pad, p.x + depth(id) + 4, p.y - p.w / 2, p.y + p.w / 2]
-					: [p.x - p.w / 2, p.x + p.w / 2, p.y - pad, p.y + depth(id) + 4];
-				x0 = Math.min(x0, l);
-				x1 = Math.max(x1, r);
-				y0 = Math.min(y0, t);
-				y1 = Math.max(y1, b);
+				const [u, v] = uv(p, right);
+				u0 = Math.min(u0, u - p.w / 2);
+				u1 = Math.max(u1, u + p.w / 2);
+				v0 = Math.min(v0, v - pad);
+				v1 = Math.max(v1, v + depth(id) + 4);
 			}
-			if (x0 === Infinity) return;
-			this.bandsEl.createSvg("rect", {
-				cls: "ldg-band",
-				attr: { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rx: 8, ry: 8 },
-			});
+			if (u0 !== Infinity) this.backdrop("ldg-band", right, u0, u1, v0, v1, 8);
 		});
+	}
+
+	/**
+	 * A background colour per group, the notes linked from the same note one
+	 * layer up (groupLayers): a box per run of them in each sub-row, so a group
+	 * a wrap splits keeps its colour. The colours run on from row to row, so
+	 * neighbouring groups differ and the rows below do not repeat the same start.
+	 */
+	private drawGroups(g: LayeredGraph, owners: Map<string, string>, right: boolean, depth: (id: string) => number): void {
+		const pad = 9;
+		const inset = 1.5;
+		const colour = new Map<string, number>();
+		g.layers.forEach((layer, d) => {
+			if (d === 0) return;
+			// Per sub-row: how far its names reach, and its runs of one group along the row.
+			const subs = new Map<number, { reach: number; runs: { owner: string; points: Point[] }[] }>();
+			for (const id of layer) {
+				const p = this.points.get(id);
+				if (!p) continue;
+				const sub = subs.get(p.sub) ?? { reach: 0, runs: [] };
+				subs.set(p.sub, sub);
+				sub.reach = Math.max(sub.reach, depth(id));
+				// Notes without a group come last in their layer, so they never split a run.
+				const owner = owners.get(id);
+				if (owner === undefined) continue;
+				if (!colour.has(owner)) colour.set(owner, colour.size);
+				const run = sub.runs[sub.runs.length - 1];
+				if (run?.owner === owner) run.points.push(p);
+				else sub.runs.push({ owner, points: [p] });
+			}
+			for (const { reach, runs } of subs.values()) {
+				for (const { owner, points } of runs) {
+					const a = points[0] as Point;
+					const b = points[points.length - 1] as Point;
+					const [ua, v] = uv(a, right);
+					const [ub] = uv(b, right);
+					const cls = ["ldg-group", `is-group-${(colour.get(owner) ?? 0) % GROUP_COLOURS}`];
+					const box = this.backdrop(cls, right, ua - a.w / 2 + inset, ub + b.w / 2 - inset, v - pad, v + reach + 3, 6);
+					box.setAttr("data-owner", owner);
+				}
+			}
+		});
+	}
+
+	/** A rounded box behind the lines, from where it spans along the rows (u) and the way the graph grows (v). */
+	private backdrop(cls: string | string[], right: boolean, u0: number, u1: number, v0: number, v1: number, rx: number): SVGRectElement {
+		const [x, y, width, height] = right ? [v0, u0, v1 - v0, u1 - u0] : [u0, v0, u1 - u0, v1 - v0];
+		return this.bandsEl.createSvg("rect", { cls, attr: { x, y, width, height, rx, ry: rx } });
 	}
 
 	private drawEdge(e: GraphEdge): void {
@@ -416,6 +484,8 @@ export class TreeGraphView extends ItemView {
 		const all = s.graphLabels === "all";
 		setIcon(this.namesBtnEl, all ? "tags" : "tag");
 		this.namesBtnEl.setAttr("aria-label", all ? t("graphNamesAll") : t("graphNamesRoute"));
+		this.groupsBtnEl.toggleClass("is-active", s.graphGroups);
+		this.groupsBtnEl.setAttr("aria-label", s.graphGroups ? t("graphGroupsOn") : t("graphGroupsOff"));
 		this.focusBtnEl.toggleClass("is-active", s.graphFocus);
 		this.focusBtnEl.setAttr("aria-label", s.graphFocus ? t("graphFocusOn") : t("graphFocusOff"));
 		this.hopsEl.toggle(s.graphFocus);
@@ -433,10 +503,10 @@ export class TreeGraphView extends ItemView {
 	private applyHighlight(center: boolean): void {
 		const g = this.graph;
 		for (const el of this.edgeEls.values()) {
-			el.removeClass("is-route", "is-main", "is-link", ...HOP_CLASSES);
+			el.removeClass("is-route", "is-link", ...HOP_CLASSES);
 			if (el.hasAttribute("marker-end")) el.setAttr("marker-end", "url(#ldg-arrow)");
 		}
-		for (const el of this.nodeEls.values()) el.removeClass("is-route", "is-main", "is-active", "is-link", ...HOP_CLASSES);
+		for (const el of this.nodeEls.values()) el.removeClass("is-route", "is-active", "is-link", ...HOP_CLASSES);
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-marker"))) el.remove();
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-hop-num"))) {
 			const node = el.parentElement;
@@ -490,14 +560,7 @@ export class TreeGraphView extends ItemView {
 				el.addClass("is-route");
 				this.edgesEl.appendChild(el);
 			}
-			for (const key of hl.main) {
-				const el = this.edgeEls.get(key);
-				if (!el) continue;
-				el.addClass("is-main");
-				this.edgesEl.appendChild(el);
-			}
 			for (const n of hl.nodes) this.nodeEls.get(n)?.addClass("is-route");
-			for (const n of hl.mainNodes) this.nodeEls.get(n)?.addClass("is-main");
 			const el = this.nodeEls.get(id);
 			if (el) {
 				el.addClass("is-active");
@@ -526,10 +589,11 @@ export class TreeGraphView extends ItemView {
 		this.flows = [];
 		this.flowEl.empty();
 		const g = this.graph;
-		if (!g || !this.plugin.settings.graphFlow || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		// Not held back by the system's reduced motion: the setting alone decides.
+		if (!g || !this.plugin.settings.graphFlow) return;
 		const right = this.plugin.settings.graphDirection === "right";
 		const near = [...(reach?.edges ?? [])].sort((a, b) => a[1] - b[1]).map(([key]) => key);
-		const keys = new Set([...(hl?.main ?? []), ...(hl?.edges ?? []), ...near]);
+		const keys = new Set([...(hl?.edges ?? []), ...near]);
 		for (const key of [...keys].slice(0, FLOW_CAP)) {
 			const el = this.edgeEls.get(key);
 			const from = key.split("\u0000")[0] ?? "";
@@ -572,11 +636,9 @@ export class TreeGraphView extends ItemView {
 			it.createSpan({ text });
 		};
 		item("is-down", t("graphLegendLink"));
+		if (this.owners && this.owners.size > 0) item("is-group", t("graphLegendGroup"));
 		if (g.edges.some((e) => e.kind !== "down")) item("is-faint", t("graphLegendFaint"));
-		if (hl && hl.edges.size > 0) {
-			item("is-main", t("graphLegendRoute"));
-			if (hl.edges.size > hl.main.size) item("is-route", t("graphLegendRouteAlt"));
-		}
+		if (hl && hl.edges.size > 0) item("is-route", t("graphLegendRoute"));
 		if (reach && reach.edges.size > 0) {
 			// One swatch per hop shown, the last shade standing for that many and more.
 			const it = el.createSpan({ cls: "ldg-legend-item" });
@@ -987,6 +1049,12 @@ export class TreeGraphView extends ItemView {
 		const reach = this.activePath && hl ? reachFrom(g, this.activePath, hl.nodes) : null;
 		const count = (sel: string) => this.edgesEl.querySelectorAll(sel).length;
 		const byHop = (sel: string) => HOP_CLASSES.map((h) => count(`${sel}.${h}`));
+		// note → the notes that go with it, in order
+		const groups: Record<string, string[]> = {};
+		for (const id of g.layers.flat()) {
+			const o = this.owners?.get(id);
+			if (o !== undefined) (groups[name(o)] ??= []).push(name(id));
+		}
 		return {
 			root: g.root,
 			layers: g.layers.map((l) => l.map(name)),
@@ -1001,13 +1069,12 @@ export class TreeGraphView extends ItemView {
 			active: this.activePath,
 			focus: this.plugin.settings.graphFocus,
 			focusHops: this.plugin.settings.graphFocusHops,
+			groups: this.owners ? groups : null,
 			hidden: (this.full?.nodes.size ?? 0) - g.nodes.size,
 			route: hl ? route(hl.edges) : null,
-			main: hl ? route(hl.main) : null,
 			reach: reach ? Object.fromEntries([...reach.nodes].map(([id, hop]) => [name(id), hop])) : null,
 			dom: {
 				route: count(".ldg-edge.is-route"),
-				main: count(".ldg-edge.is-main"),
 				// per hop shade: [1, 2, 3, 4+]
 				linkEdges: byHop(".ldg-edge.is-link"),
 				linkNodes: HOP_CLASSES.map((h) => this.nodesEl.querySelectorAll(`.ldg-node.is-link.${h}`).length),
@@ -1023,6 +1090,7 @@ export class TreeGraphView extends ItemView {
 				marker: this.nodesEl.querySelectorAll(".ldg-marker").length,
 				dimmed: this.svgEl.hasClass("has-highlight"),
 				flow: this.flows.length,
+				groupBoxes: this.bandsEl.querySelectorAll(".ldg-group").length,
 			},
 			notice: this.noticeEl.isShown(),
 			orphans: this.orphans.map((f) => f.path),
@@ -1043,6 +1111,11 @@ export class TreeGraphView extends ItemView {
 			},
 		};
 	}
+}
+
+/** Where a point sits along its row (u) and the way the graph grows (v). */
+function uv(p: Point, right: boolean): [number, number] {
+	return right ? [p.y, p.x] : [p.x, p.y];
 }
 
 function radius(g: LayeredGraph | null, id: string): number {
