@@ -31,6 +31,7 @@ A second view (ribbon icon *network*, command **Open tree graph**) draws the sam
 - **Direction**: top to bottom, or left to right (names beside the dots — the readable choice when rows get long). Each layer sits only as far from the next as its own longest name needs; lines run out past the names, bend only in the gap between layers, and run straight in to their dot, so they do not cross other names.
 - **Long rows wrap**: a row longer than the limit (default 1200 px) folds into several rows, keeping its order, so the graph stays within a screen's width.
 - The header buttons switch direction, names and groups on the spot.
+- **Name length**: a slider in the header (and the setting *Name length*) sets how many characters of a name are shown before the rest is cut short with "…" (4–60, default 10). Each layer sits only as far from the next as its own longest name, so the layers draw closer or apart as you drag; the view keeps its place, and the value is saved when you let go.
 - Links **within a row** or **back up** to a shallower row are always drawn, but thin and dashed with an arrowhead, so they read as secondary.
 - The **routes from the root to the open note** stand out by colour strength as well as width: every shortest route thick in the full accent colour, its dots and names too, all alike since they are equally short, and the remaining lines step back. The open note's name is marked like the current file in the File Explorer, and the graph pans to it when it is off screen (auto-reveal).
 - **Everything the open note reaches by links** (the notes it links to, the notes those link to, and so on, in any row) takes a second colour, the accent turned a third of the way round the colour wheel, so where the note leads reads apart from the route coming in. Each hop further is paler and thinner (1, 2, 3, then 4 and more share the last shade), so the legend's numbers read as "this many links away", and each of those dots, a little larger, carries its own number of hops (in black or white, whichever reads on its shade). The walk does not go on through the route: a link back to the root is coloured, but what the root links to is not, or a note that links back to TOP would colour the whole graph. A CSS snippet can set `--ldg-link` on `.ldg` to choose another colour.
@@ -63,6 +64,7 @@ A second view (ribbon icon *network*, command **Open tree graph**) draws the sam
 | Tree graph → Folder for unreachable notes | (empty) | fixed root only; empty = the root note's folder |
 | Tree graph → Direction | top to bottom | or left to right |
 | Tree graph → Note names | every note | or route only (others on hover) |
+| Tree graph → Name length | 10 | characters shown before "…" (4–60); also in the header |
 | Tree graph → Wrap long rows (px) | 1200 | 0 = never wrap |
 | Tree graph → Group by linking note | on | notes linked from the same note together, on a background colour; off = ordered to cross fewer lines |
 | Tree graph → Only the route and its links | off | hide notes off the route and the notes it links to |

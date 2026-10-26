@@ -91,6 +91,7 @@ const en = {
 	graphDirRight: "Direction: left to right (click for top to bottom)",
 	graphNamesAll: "Names: every note (click for the route only)",
 	graphNamesRoute: "Names: route only, others on hover (click for every note)",
+	graphLabelChars: "Name length: {n} characters (drag to change)",
 	graphGroupsOn: "Groups: by linking note, on a background colour (click to turn off)",
 	graphGroupsOff: "Groups: off, rows ordered to cross fewer lines (click to group by linking note)",
 	setGraphDirection: "Direction",
@@ -102,6 +103,9 @@ const en = {
 		"Show every name, or only the names on the route from the root to the open note (others appear on hover).",
 	setGraphNamesAll: "Every note",
 	setGraphNamesRoute: "Route only",
+	setGraphLabelChars: "Name length",
+	setGraphLabelCharsDesc:
+		"Characters of a note name shown before the rest is cut short with “…”. Each layer sits only as far from the next as its longest name, so shorter names bring the layers closer. The header has the same slider.",
 	setGraphGroups: "Group by linking note",
 	setGraphGroupsDesc:
 		"Keep the notes linked from the same note one row up together, in the order that note links them, each group on a background colour of its own. A note linked from several goes with the first of them (the top one left to right, the left one top to bottom). Off: each row is ordered to cross fewer lines.",
@@ -201,6 +205,7 @@ const ja: typeof en = {
 	graphDirRight: "向き: 左→右（クリックで上→下）",
 	graphNamesAll: "名前: すべて表示（クリックで道筋のみ）",
 	graphNamesRoute: "名前: 道筋のみ・他はマウスを乗せると表示（クリックですべて）",
+	graphLabelChars: "名前の文字数: {n}（ドラッグで変更）",
 	graphGroupsOn: "背景色: リンク元ごとにまとめる（クリックで OFF）",
 	graphGroupsOff: "背景色: なし・線の交差が少ない並び（クリックでリンク元ごとにまとめる）",
 	setGraphDirection: "向き",
@@ -211,6 +216,9 @@ const ja: typeof en = {
 	setGraphNamesDesc: "すべての名前を出すか、ルート→開いているノートの道筋だけ出すか（他はマウスを乗せると表示）。",
 	setGraphNamesAll: "すべて",
 	setGraphNamesRoute: "道筋のみ",
+	setGraphLabelChars: "ノート名の文字数",
+	setGraphLabelCharsDesc:
+		"ノート名をこの文字数まで表示し、残りは「…」で省略する。段と段の間隔は各段でいちばん長い名前に合わせて決まるので、短くすると段が詰まる。ヘッダーのバーでも変えられる。",
 	setGraphGroups: "リンク元ごとに背景色でまとめる",
 	setGraphGroupsDesc:
 		"1 段上の同じノートからリンクされているノートを、そのノートに書かれた順にまとめて並べ、まとまりごとに背景色を付ける。複数のノートからリンクされているノートは、先にあるノート（左→右なら上、上→下なら左）のまとまりに入る。OFF にすると、線の交差が少なくなるように並べる。",

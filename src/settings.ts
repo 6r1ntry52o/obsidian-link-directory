@@ -25,6 +25,8 @@ export interface LinkDirectorySettings {
 	graphDirection: Direction;
 	/** Tree graph: show every note name, or only those on the route to the open note. */
 	graphLabels: "all" | "route";
+	/** Tree graph: characters of a name shown before it is cut short with "…". */
+	graphLabelChars: number;
 	/** Tree graph: keep the notes linked from the same note together, on a background colour. */
 	graphGroups: boolean;
 	/** Tree graph: wrap a layer longer than this many pixels (0 = never). */
@@ -54,12 +56,17 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphOrphanScope: "",
 	graphDirection: "down",
 	graphLabels: "all",
+	graphLabelChars: 10,
 	graphGroups: true,
 	graphMaxLength: 1200,
 	graphFocus: false,
 	graphFocusHops: 1,
 	graphFlow: true,
 };
+
+/** The range of the name length slider, in characters. */
+export const LABEL_CHARS_MIN = 4;
+export const LABEL_CHARS_MAX = 60;
 
 /** The hops offered for focus, 0 (every hop) last. */
 export const FOCUS_HOPS = [1, 2, 3, 4, 5, 0];
@@ -272,6 +279,20 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 					.setValue(s.graphLabels)
 					.onChange((v) => {
 						s.graphLabels = v as "all" | "route";
+						save();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphLabelChars"))
+			.setDesc(t("setGraphLabelCharsDesc"))
+			.addSlider((sl) =>
+				sl
+					.setLimits(LABEL_CHARS_MIN, LABEL_CHARS_MAX, 1)
+					.setValue(s.graphLabelChars)
+					.setDynamicTooltip()
+					.onChange((v) => {
+						s.graphLabelChars = v;
 						save();
 					}),
 			);

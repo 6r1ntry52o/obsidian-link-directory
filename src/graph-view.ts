@@ -1,4 +1,4 @@
-import { ItemView, Keymap, Menu, TAbstractFile, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
+import { ItemView, Keymap, Menu, SliderComponent, TAbstractFile, TFile, WorkspaceLeaf, debounce, setIcon } from "obsidian";
 import { MetadataLinkSource } from "./adapter";
 import { t } from "./i18n";
 import {
@@ -20,7 +20,7 @@ import {
 	type Reach,
 } from "./layered";
 import type LinkDirectoryPlugin from "./main";
-import { FOCUS_HOPS, hopsLabel } from "./settings";
+import { FOCUS_HOPS, LABEL_CHARS_MAX, LABEL_CHARS_MIN, hopsLabel } from "./settings";
 
 export const VIEW_TYPE_TREE_GRAPH = "link-directory-graph";
 
@@ -31,7 +31,6 @@ const HIT_R = 11;
 const DOT_STEP = 26;
 /** Room per dot along a column growing right (name beside the dot). */
 const ROW_STEP = 22;
-const MAX_LABEL = 120;
 const LABEL_GAP = 12;
 /** Space between a dot and its name. */
 const LABEL_OFFSET = 5;
@@ -108,6 +107,7 @@ export class TreeGraphView extends ItemView {
 	private pinBtnEl!: HTMLElement;
 	private dirBtnEl!: HTMLElement;
 	private namesBtnEl!: HTMLElement;
+	private labelCharsEl!: SliderComponent;
 	private groupsBtnEl!: HTMLElement;
 	private focusBtnEl!: HTMLElement;
 	private hopsEl!: HTMLSelectElement;
@@ -128,6 +128,8 @@ export class TreeGraphView extends ItemView {
 	private orphansEl!: HTMLDetailsElement;
 
 	private readonly rerender = debounce(() => this.render(), 300, true);
+	/** Lays out again while the name length slider moves, a few times a second at most. */
+	private readonly relayout = debounce(() => this.render(), 60, false);
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -166,6 +168,18 @@ export class TreeGraphView extends ItemView {
 			s.graphLabels = s.graphLabels === "all" ? "route" : "all";
 			void this.plugin.saveSettings();
 		});
+		// Name length: lays out again as the slider moves (the view keeps its place), saved when let go.
+		this.labelCharsEl = new SliderComponent(buttons)
+			.setLimits(LABEL_CHARS_MIN, LABEL_CHARS_MAX, 1)
+			.setInstant(true)
+			.setDynamicTooltip()
+			.onChange((v) => {
+				if (v === this.plugin.settings.graphLabelChars) return;
+				this.plugin.settings.graphLabelChars = v;
+				this.relayout();
+			});
+		this.labelCharsEl.sliderEl.addClass("ldg-label-chars");
+		this.labelCharsEl.sliderEl.addEventListener("change", () => void this.plugin.saveSettings());
 		this.groupsBtnEl = this.actionButton(buttons, "group", "", () => {
 			const s = this.plugin.settings;
 			s.graphGroups = !s.graphGroups;
@@ -318,7 +332,7 @@ export class TreeGraphView extends ItemView {
 		const labelW = this.labelW;
 		labelW.clear();
 		for (const n of g.nodes.values()) {
-			const label = truncate(n.display, MAX_LABEL, measure);
+			const label = truncate(n.display, s.graphLabelChars);
 			labels.set(n.id, label);
 			labelW.set(n.id, measure(label));
 		}
@@ -486,6 +500,9 @@ export class TreeGraphView extends ItemView {
 		const all = s.graphLabels === "all";
 		setIcon(this.namesBtnEl, all ? "tags" : "tag");
 		this.namesBtnEl.setAttr("aria-label", all ? t("graphNamesAll") : t("graphNamesRoute"));
+		// setValue also moves the number beside it; onChange ignores the unchanged value.
+		this.labelCharsEl.setValue(s.graphLabelChars);
+		this.labelCharsEl.sliderEl.setAttr("aria-label", t("graphLabelChars").replace("{n}", String(s.graphLabelChars)));
 		this.groupsBtnEl.toggleClass("is-active", s.graphGroups);
 		this.groupsBtnEl.setAttr("aria-label", s.graphGroups ? t("graphGroupsOn") : t("graphGroupsOff"));
 		this.focusBtnEl.toggleClass("is-active", s.graphFocus);
@@ -1074,6 +1091,9 @@ export class TreeGraphView extends ItemView {
 			active: this.activePath,
 			focus: this.plugin.settings.graphFocus,
 			focusHops: this.plugin.settings.graphFocusHops,
+			labelChars: this.plugin.settings.graphLabelChars,
+			// where each layer starts along the growth direction
+			starts: this.starts.map(Math.round),
 			groups: this.owners ? groups : null,
 			hidden: (this.full?.nodes.size ?? 0) - g.nodes.size,
 			route: hl ? route(hl.edges) : null,
@@ -1215,15 +1235,8 @@ function flowFrames(path: SVGPathElement, start: number, width: number): { frame
 	return { frames, duration };
 }
 
-function truncate(text: string, max: number, measure: (s: string) => number): string {
-	if (measure(text) <= max) return text;
+/** The first `max` characters of `text`, and "…" when there is more. */
+function truncate(text: string, max: number): string {
 	const chars = Array.from(text);
-	let lo = 0;
-	let hi = chars.length;
-	while (lo < hi) {
-		const mid = (lo + hi + 1) >> 1;
-		if (measure(chars.slice(0, mid).join("") + "…") <= max) lo = mid;
-		else hi = mid - 1;
-	}
-	return chars.slice(0, lo).join("") + "…";
+	return chars.length <= max ? text : chars.slice(0, max).join("") + "…";
 }
