@@ -1,6 +1,6 @@
 {
   "name": "obsidian-link-directory",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Browse the link structure of your notes as a directory tree, styled like the File Explorer.",
   "main": "main.js",
   "type": "module",

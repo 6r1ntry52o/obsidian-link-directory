@@ -473,5 +473,10 @@
 	top: 0;
 	border-radius: 999px;
 	transform-origin: 100% 50%;
-	background: linear-gradient(to right, transparent, var(--ldg-flow));
+	background: linear-gradient(to right, transparent, var(--ldg-flow) 55%);
+}
+/* On the paler links further away, and across the gaps of a dashed one, white
+   hardly shows: the line lights up in its own colour at full strength instead. */
+.ldg-flow-strip.is-tinted {
+	--ldg-flow: var(--ldg-link);
 }

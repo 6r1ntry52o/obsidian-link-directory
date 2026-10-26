@@ -58,6 +58,8 @@ const FLOW_LEN = 12;
 const FLOW_SPEED = 140;
 const FLOW_REST = 700;
 const FLOW_FADE = 8;
+/** The light is at least this thick, so it shows on the thin lines too (still under the route's 3.5). */
+const FLOW_MIN_THICK = 2.5;
 /** Lines that get the light at most: each strip is a layer of its own. */
 const FLOW_CAP = 150;
 /** Background colours the groups take in turn, row after row (`.is-group-0` to `-7` in styles.css). */
@@ -602,11 +604,14 @@ export class TreeGraphView extends ItemView {
 			// A line down the rows leaves under its note's name: start the light past the names.
 			const port = this.ports[g.nodes.get(from)?.depth ?? 0] ?? 0;
 			const start = el.hasClass("is-down") ? Math.max(0, port - (right ? a.x : a.y) - radius(g, from)) : 0;
-			const width = Number.parseFloat(getComputedStyle(el).strokeWidth) || 2;
-			const run = flowFrames(el, start, width);
+			const thick = Math.max(FLOW_MIN_THICK, Number.parseFloat(getComputedStyle(el).strokeWidth) || 2);
+			const run = flowFrames(el, start, thick);
 			if (!run) continue;
-			const strip = this.flowEl.createDiv({ cls: "ldg-flow-strip" });
-			strip.setCssStyles({ width: `${FLOW_LEN}px`, height: `${width}px` });
+			// White hardly shows on the paler links or across the gaps of a dashed one:
+			// there the light takes the link colour at full strength (styles.css).
+			const tinted = el.hasClass("is-link") && (!el.hasClass("hop-1") || !el.hasClass("is-down"));
+			const strip = this.flowEl.createDiv({ cls: tinted ? ["ldg-flow-strip", "is-tinted"] : "ldg-flow-strip" });
+			strip.setCssStyles({ width: `${FLOW_LEN}px`, height: `${thick}px` });
 			this.flows.push(strip.animate(run.frames, { duration: run.duration, iterations: Infinity }));
 		}
 	}
