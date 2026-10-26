@@ -315,16 +315,20 @@
 .ldg-node.is-active .ldg-label {
 	font-weight: var(--font-semibold);
 }
-/* Names along the routes take the accent too, so a route reads from its names. */
+/* Names along the routes take the accent too, so a route reads from its names:
+   edged in white in either theme, as the route's own line runs under them, and
+   the accent darkened nearly to black so the letters read on the white. */
 .ldg-node.is-route .ldg-label {
-	fill: var(--text-accent);
+	fill: color-mix(in srgb, var(--text-accent) 40%, black);
+	stroke: white;
+	stroke-width: 4px;
 }
 .ldg-node.is-active .ldg-label {
 	fill: var(--text-normal);
 	stroke: var(--ldg-marker);
 }
 .ldg-node.is-unresolved .ldg-label {
-	fill: var(--text-faint);
+	fill: var(--text-muted);
 	font-style: italic;
 }
 /* "Route only": names on the route, the root and the hovered dot. */
@@ -372,8 +376,8 @@
 	border-radius: 3px;
 	background: linear-gradient(
 		to right,
-		color-mix(in srgb, var(--color-blue) 22%, transparent) 50%,
-		color-mix(in srgb, var(--color-orange) 22%, transparent) 50%
+		color-mix(in srgb, var(--text-normal) 20%, transparent) 50%,
+		color-mix(in srgb, var(--text-normal) 6%, transparent) 50%
 	);
 }
 
@@ -445,23 +449,15 @@
 	opacity: 0.7;
 }
 
-/* A background colour per group of notes linked from the same note one row
-   up, taken in turn along the row (on the band, behind lines and dots). */
+/* A grey box per group of notes linked from the same note one row up, a
+   darker and a paler grey in turn (on the band, behind lines and dots). */
 .ldg-group {
-	fill: var(--ldg-group);
-	fill-opacity: 0.14;
-}
-.theme-dark .ldg-group {
+	fill: var(--text-normal);
 	fill-opacity: 0.2;
 }
-.ldg-group.is-group-0 { --ldg-group: var(--color-blue); }
-.ldg-group.is-group-1 { --ldg-group: var(--color-orange); }
-.ldg-group.is-group-2 { --ldg-group: var(--color-green); }
-.ldg-group.is-group-3 { --ldg-group: var(--color-pink); }
-.ldg-group.is-group-4 { --ldg-group: var(--color-cyan); }
-.ldg-group.is-group-5 { --ldg-group: var(--color-yellow); }
-.ldg-group.is-group-6 { --ldg-group: var(--color-purple); }
-.ldg-group.is-group-7 { --ldg-group: var(--color-red); }
+.ldg-group.is-pale {
+	fill-opacity: 0.06;
+}
 
 /* The light running along the coloured lines, base to tip: a short strip with
    its bright end in front, moved by the compositor (transform and opacity only). */

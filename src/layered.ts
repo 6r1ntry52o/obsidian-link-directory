@@ -202,6 +202,41 @@ export function groupLayers(g: LayeredGraph): Map<string, string> {
 }
 
 /**
+ * Two background tones (0 and 1) for the groups of one layer, so that groups
+ * side by side differ. In layer order, each group takes the tone apart from
+ * most of the groups just before its notes in their sub-rows (a wrapped layer
+ * can put a group beside several), else the other tone from the group before
+ * it. Relies on groupLayers keeping each group together.
+ */
+export function groupTones(layer: readonly string[], sub: (id: string) => number, owners: Map<string, string>): Map<string, 0 | 1> {
+	const tones = new Map<string, 0 | 1>();
+	const last = new Map<number, string>();
+	let current: string | undefined;
+	let vote = 0;
+	let prev: 0 | 1 = 1;
+	const settle = () => {
+		if (current === undefined) return;
+		prev = vote > 0 ? 1 : vote < 0 ? 0 : prev === 0 ? 1 : 0;
+		tones.set(current, prev);
+	};
+	for (const id of layer) {
+		const owner = owners.get(id);
+		if (owner === undefined) continue;
+		if (owner !== current) {
+			settle();
+			current = owner;
+			vote = 0;
+		}
+		const s = sub(id);
+		const before = last.get(s);
+		if (before !== undefined && before !== owner) vote += tones.get(before) === 0 ? 1 : -1;
+		last.set(s, owner);
+	}
+	settle();
+	return tones;
+}
+
+/**
  * The part of the graph around a route: the route's notes and every note one
  * of them links to (down, within a layer or back up), and the notes `from`
  * (the open note, on the route) reaches by up to `hops` links (0 = any

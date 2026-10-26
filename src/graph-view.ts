@@ -6,6 +6,7 @@ import {
 	edgeKey,
 	focusOn,
 	groupLayers,
+	groupTones,
 	orderLayers,
 	pathToRoot,
 	place,
@@ -21,6 +22,7 @@ import {
 } from "./layered";
 import type LinkDirectoryPlugin from "./main";
 import { FOCUS_HOPS, LABEL_CHARS_MAX, LABEL_CHARS_MIN, hopsLabel } from "./settings";
+import { THEMED_CLASS, appTheme, themedCss } from "./theme";
 
 export const VIEW_TYPE_TREE_GRAPH = "link-directory-graph";
 
@@ -61,8 +63,6 @@ const FLOW_FADE = 8;
 const FLOW_MIN_THICK = 2.5;
 /** Lines that get the light at most: each strip is a layer of its own. */
 const FLOW_CAP = 150;
-/** Background colours the groups take in turn, row after row (`.is-group-0` to `-7` in styles.css). */
-const GROUP_COLOURS = 8;
 
 /**
  * The link graph seen from one root note: a row per link distance, every note
@@ -109,6 +109,10 @@ export class TreeGraphView extends ItemView {
 	private namesBtnEl!: HTMLElement;
 	private labelCharsEl!: SliderComponent;
 	private groupsBtnEl!: HTMLElement;
+	private flowBtnEl!: HTMLElement;
+	private themeBtnEl!: HTMLElement;
+	/** The derived colours for a theme of the tab's own (themedCss), while it has one. */
+	private themeStyleEl: HTMLStyleElement | null = null;
 	private focusBtnEl!: HTMLElement;
 	private hopsEl!: HTMLSelectElement;
 	private canvasEl!: HTMLElement;
@@ -198,6 +202,17 @@ export class TreeGraphView extends ItemView {
 			this.plugin.settings.graphFocusHops = Number(this.hopsEl.value);
 			void this.plugin.saveSettings();
 		});
+		this.flowBtnEl = this.actionButton(buttons, "sparkles", "", () => {
+			const s = this.plugin.settings;
+			s.graphFlow = !s.graphFlow;
+			void this.plugin.saveSettings();
+		});
+		// The tab's colours: switching back to Obsidian's follows Obsidian again.
+		this.themeBtnEl = this.actionButton(buttons, "moon", "", () => {
+			const next = this.theme() === "dark" ? "light" : "dark";
+			this.plugin.settings.graphTheme = next === appTheme(document) ? "auto" : next;
+			void this.plugin.saveSettings();
+		});
 		this.actionButton(buttons, "scan", t("graphFit"), () => this.fit());
 		this.actionButton(buttons, "refresh-cw", t("refresh"), () => this.render());
 		this.rootLabelEl = header.createDiv({ cls: "ld-root-label" });
@@ -242,6 +257,14 @@ export class TreeGraphView extends ItemView {
 		this.registerEvent(this.app.vault.on("create", () => this.rerender()));
 		this.registerEvent(this.app.vault.on("delete", () => this.rerender()));
 		this.registerEvent(this.app.vault.on("rename", (file, oldPath) => this.onRename(file, oldPath)));
+		// Obsidian's theme or a snippet changed: derive the tab's colours again.
+		this.registerEvent(
+			this.app.workspace.on("css-change", () => {
+				if (this.themeStyleEl) this.themeStyleEl.textContent = themedCss(document);
+				this.updateHeader();
+			}),
+		);
+		this.register(() => this.themeStyleEl?.remove());
 
 		this.app.workspace.onLayoutReady(() => {
 			const active = this.app.workspace.getActiveFile();
@@ -391,17 +414,17 @@ export class TreeGraphView extends ItemView {
 	}
 
 	/**
-	 * A background colour per group, the notes linked from the same note one
-	 * layer up (groupLayers): a box per run of them in each sub-row, so a group
-	 * a wrap splits keeps its colour. The colours run on from row to row, so
-	 * neighbouring groups differ and the rows below do not repeat the same start.
+	 * A grey box behind each group, the notes linked from the same note one
+	 * layer up (groupLayers): one per run of them in each sub-row, so a group a
+	 * wrap splits keeps its tone. A darker and a paler grey take turns
+	 * (groupTones), so groups side by side differ.
 	 */
 	private drawGroups(g: LayeredGraph, owners: Map<string, string>, right: boolean, depth: (id: string) => number): void {
 		const pad = 9;
 		const inset = 1.5;
-		const colour = new Map<string, number>();
 		g.layers.forEach((layer, d) => {
 			if (d === 0) return;
+			const tones = groupTones(layer, (id) => this.points.get(id)?.sub ?? 0, owners);
 			// Per sub-row: how far its names reach, and its runs of one group along the row.
 			const subs = new Map<number, { reach: number; runs: { owner: string; points: Point[] }[] }>();
 			for (const id of layer) {
@@ -413,7 +436,6 @@ export class TreeGraphView extends ItemView {
 				// Notes without a group come last in their layer, so they never split a run.
 				const owner = owners.get(id);
 				if (owner === undefined) continue;
-				if (!colour.has(owner)) colour.set(owner, colour.size);
 				const run = sub.runs[sub.runs.length - 1];
 				if (run?.owner === owner) run.points.push(p);
 				else sub.runs.push({ owner, points: [p] });
@@ -424,7 +446,7 @@ export class TreeGraphView extends ItemView {
 					const b = points[points.length - 1] as Point;
 					const [ua, v] = uv(a, right);
 					const [ub] = uv(b, right);
-					const cls = ["ldg-group", `is-group-${(colour.get(owner) ?? 0) % GROUP_COLOURS}`];
+					const cls = tones.get(owner) === 1 ? ["ldg-group", "is-pale"] : "ldg-group";
 					const box = this.backdrop(cls, right, ua - a.w / 2 + inset, ub + b.w / 2 - inset, v - pad, v + reach + 3, 6);
 					box.setAttr("data-owner", owner);
 				}
@@ -489,8 +511,31 @@ export class TreeGraphView extends ItemView {
 		this.nodeEls.set(n.id, el);
 	}
 
+	/** The colours the tab shows: its own, or Obsidian's. */
+	private theme(): "light" | "dark" {
+		const own = this.plugin.settings.graphTheme;
+		return own === "auto" ? appTheme(document) : own;
+	}
+
+	/** Gives the tab (its header too) a theme of its own, or lets it follow Obsidian's. */
+	private applyTheme(): void {
+		const own = this.plugin.settings.graphTheme;
+		if (own !== "auto" && !this.themeStyleEl) {
+			this.themeStyleEl = document.head.createEl("style");
+			this.themeStyleEl.textContent = themedCss(document);
+		}
+		this.containerEl.toggleClass(THEMED_CLASS, own !== "auto");
+		this.containerEl.toggleClass("theme-light", own === "light");
+		this.containerEl.toggleClass("theme-dark", own === "dark");
+	}
+
 	private updateHeader(): void {
 		const s = this.plugin.settings;
+		this.applyTheme();
+		const dark = this.theme() === "dark";
+		setIcon(this.themeBtnEl, dark ? "moon" : "sun");
+		this.themeBtnEl.setAttr("aria-label", dark ? t("graphThemeDark") : t("graphThemeLight"));
+		this.themeBtnEl.toggleClass("is-active", s.graphTheme !== "auto");
 		setIcon(this.pinBtnEl, this.following ? "pin" : "pin-off");
 		this.pinBtnEl.setAttr("aria-label", this.following ? t("pin") : t("unpin"));
 		this.pinBtnEl.toggleClass("is-active", !this.following);
@@ -509,6 +554,8 @@ export class TreeGraphView extends ItemView {
 		this.focusBtnEl.setAttr("aria-label", s.graphFocus ? t("graphFocusOn") : t("graphFocusOff"));
 		this.hopsEl.toggle(s.graphFocus);
 		this.hopsEl.value = String(s.graphFocusHops);
+		this.flowBtnEl.toggleClass("is-active", s.graphFlow);
+		this.flowBtnEl.setAttr("aria-label", s.graphFlow ? t("graphFlowOn") : t("graphFlowOff"));
 	}
 
 	/**

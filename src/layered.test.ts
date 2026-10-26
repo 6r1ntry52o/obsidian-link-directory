@@ -6,6 +6,7 @@ import {
 	edgeKey,
 	focusOn,
 	groupLayers,
+	groupTones,
 	orderLayers,
 	pathToRoot,
 	place,
@@ -128,6 +129,35 @@ describe("groupLayers", () => {
 		expect(names(f)[3]).toEqual(["Y", "X", "Q"]);
 		expect(owners.get("X.md")).toBe("D.md");
 		expect(owners.has("Q.md")).toBe(false);
+	});
+});
+
+describe("groupTones", () => {
+	// a layer as groups of notes (group "g1" holds "g1-0", "g1-1", …), wrapped column-major into `rows` sub-rows
+	const layer = (sizes: number[]) => sizes.flatMap((n, g) => Array.from({ length: n }, (_, i) => `g${g}-${i}`));
+	const ownerOf = (ids: string[]) => new Map(ids.map((id) => [id, id.split("-")[0] as string]));
+	const neighbours = (ids: string[], rows: number) =>
+		Array.from({ length: rows }, (_, s) => ids.filter((_, i) => i % rows === s).map((id) => id.split("-")[0] as string))
+			.flatMap((row) => row.slice(1).map((o, k): [string, string] => [row[k] as string, o]))
+			.filter(([a, b]) => a !== b);
+
+	it("alternates along an unwrapped row", () => {
+		const ids = layer([2, 1, 3, 1]);
+		const tones = groupTones(ids, () => 0, ownerOf(ids));
+		expect(["g0", "g1", "g2", "g3"].map((o) => tones.get(o))).toEqual([0, 1, 0, 1]);
+	});
+
+	it("keeps groups side by side apart when the row wraps", () => {
+		for (const [sizes, rows] of [[[1, 1, 1, 1, 1, 1], 2], [[5, 5, 5], 2], [[1, 1, 1, 1, 1, 1, 1], 3], [[3, 3, 1, 1], 2]] as const) {
+			const ids = layer([...sizes]);
+			const tones = groupTones(ids, (id) => ids.indexOf(id) % rows, ownerOf(ids));
+			for (const [a, b] of neighbours(ids, rows)) expect(tones.get(a), `${sizes} / ${rows}: ${a} ${b}`).not.toBe(tones.get(b));
+		}
+	});
+
+	it("leaves notes without a group out", () => {
+		const tones = groupTones(["a", "b", "q"], () => 0, new Map([["a", "A"], ["b", "B"]]));
+		expect([...tones]).toEqual([["A", 0], ["B", 1]]);
 	});
 });
 

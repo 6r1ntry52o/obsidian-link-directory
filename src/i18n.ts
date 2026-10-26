@@ -69,7 +69,7 @@ const en = {
 		"Showing only the route and its links: also show the notes the open note reaches by up to this many links (1 = only the notes it links to). The header has the same choice while the route is shown.",
 	setGraphFlow: "Flowing light on the coloured lines",
 	setGraphFlowDesc:
-		"A short light runs along the route and the links the open note reaches, from base to tip, so the direction reads at a glance. It runs even when the system asks for reduced motion: turn it off here.",
+		"A short light runs along the route and the links the open note reaches, from base to tip, so the direction reads at a glance. It runs even when the system asks for reduced motion: turn it off here, or with the header button.",
 	graphTruncated: "Stopped at the search limit",
 	graphUnreachable: "The open note cannot be reached from the root.",
 	graphOrphans: "Not reachable from the root",
@@ -92,8 +92,12 @@ const en = {
 	graphNamesAll: "Names: every note (click for the route only)",
 	graphNamesRoute: "Names: route only, others on hover (click for every note)",
 	graphLabelChars: "Name length: {n} characters (drag to change)",
-	graphGroupsOn: "Groups: by linking note, on a background colour (click to turn off)",
+	graphGroupsOn: "Groups: by linking note, on a grey background (click to turn off)",
 	graphGroupsOff: "Groups: off, rows ordered to cross fewer lines (click to group by linking note)",
+	graphFlowOn: "Light on the coloured lines: on (click to turn off)",
+	graphFlowOff: "Light on the coloured lines: off (click to turn on)",
+	graphThemeLight: "Colours: light (click for dark)",
+	graphThemeDark: "Colours: dark (click for light)",
 	setGraphDirection: "Direction",
 	setGraphDirectionDesc: "Grow the graph down from the root, or to the right.",
 	setGraphDirectionDown: "Top to bottom",
@@ -108,7 +112,13 @@ const en = {
 		"Characters of a note name shown before the rest is cut short with “…”. Each layer sits only as far from the next as its longest name, so shorter names bring the layers closer. The header has the same slider.",
 	setGraphGroups: "Group by linking note",
 	setGraphGroupsDesc:
-		"Keep the notes linked from the same note one row up together, in the order that note links them, each group on a background colour of its own. A note linked from several goes with the first of them (the top one left to right, the left one top to bottom). Off: each row is ordered to cross fewer lines.",
+		"Keep the notes linked from the same note one row up together, in the order that note links them, each group on a grey background, darker and paler in turn. A note linked from several goes with the first of them (the top one left to right, the left one top to bottom). Off: each row is ordered to cross fewer lines.",
+	setGraphTheme: "Colours",
+	setGraphThemeDesc:
+		"The tree graph tab alone can be light or dark, whatever Obsidian's theme. The header button switches it too; switching back to Obsidian's colours follows Obsidian again.",
+	setGraphThemeAuto: "Follow Obsidian",
+	setGraphThemeLight: "Light",
+	setGraphThemeDark: "Dark",
 	setGraphMaxLength: "Wrap long rows (px)",
 	setGraphMaxLengthDesc:
 		"A row longer than this is folded into several rows, keeping its order. 0 = never wrap.",
@@ -184,7 +194,7 @@ const ja: typeof en = {
 		"「道筋の周りだけ表示」のとき、開いているノートからこの階層までリンクを辿ったノートも表示する（1 = 直接のリンク先だけ）。道筋の周りだけ表示している間は、ヘッダーでも選べる。",
 	setGraphFlow: "色付きの線に光を流す",
 	setGraphFlowDesc:
-		"道筋と、開いているノートから辿れるリンクに、根本から先端へ短い光を流して向きを示す。OS でアニメーションを切っていても流れる（止めるならここで OFF）。",
+		"道筋と、開いているノートから辿れるリンクに、根本から先端へ短い光を流して向きを示す。OS でアニメーションを切っていても流れる（止めるならここかヘッダーのボタンで OFF）。",
 	graphTruncated: "探索上限で打ち切りました",
 	graphUnreachable: "開いているノートはルートから辿れません。",
 	graphOrphans: "ルートから辿れないノート",
@@ -208,6 +218,10 @@ const ja: typeof en = {
 	graphLabelChars: "名前の文字数: {n}（ドラッグで変更）",
 	graphGroupsOn: "背景色: リンク元ごとにまとめる（クリックで OFF）",
 	graphGroupsOff: "背景色: なし・線の交差が少ない並び（クリックでリンク元ごとにまとめる）",
+	graphFlowOn: "線の光: 流す（クリックで止める）",
+	graphFlowOff: "線の光: 止めている（クリックで流す）",
+	graphThemeLight: "配色: ライト（クリックでダーク）",
+	graphThemeDark: "配色: ダーク（クリックでライト）",
 	setGraphDirection: "向き",
 	setGraphDirectionDesc: "ルートから下へ伸ばすか、右へ伸ばすか。",
 	setGraphDirectionDown: "上→下",
@@ -221,7 +235,13 @@ const ja: typeof en = {
 		"ノート名をこの文字数まで表示し、残りは「…」で省略する。段と段の間隔は各段でいちばん長い名前に合わせて決まるので、短くすると段が詰まる。ヘッダーのバーでも変えられる。",
 	setGraphGroups: "リンク元ごとに背景色でまとめる",
 	setGraphGroupsDesc:
-		"1 段上の同じノートからリンクされているノートを、そのノートに書かれた順にまとめて並べ、まとまりごとに背景色を付ける。複数のノートからリンクされているノートは、先にあるノート（左→右なら上、上→下なら左）のまとまりに入る。OFF にすると、線の交差が少なくなるように並べる。",
+		"1 段上の同じノートからリンクされているノートを、そのノートに書かれた順にまとめて並べ、まとまりごとに濃いめと薄めのグレーを交互に敷く。複数のノートからリンクされているノートは、先にあるノート（左→右なら上、上→下なら左）のまとまりに入る。OFF にすると、線の交差が少なくなるように並べる。",
+	setGraphTheme: "配色",
+	setGraphThemeDesc:
+		"ツリーグラフのタブだけを、Obsidian の配色にかかわらずライトかダークにする。ヘッダーのボタンでも切り替えられ、Obsidian と同じ配色に戻すと、以後は Obsidian に合わせる。",
+	setGraphThemeAuto: "Obsidian に合わせる",
+	setGraphThemeLight: "ライト",
+	setGraphThemeDark: "ダーク",
 	setGraphMaxLength: "段の長さの上限（px）",
 	setGraphMaxLengthDesc: "1段がこの長さを超えたら、順番を保ったまま複数の行に折り返します。0 で折り返さない。",
 };

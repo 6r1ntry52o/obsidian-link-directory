@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type LinkDirectoryPlugin from "./main";
 import { t } from "./i18n";
 import type { Direction } from "./layered";
+import type { GraphTheme } from "./theme";
 
 export interface LinkDirectorySettings {
 	rootMode: "active" | "fixed";
@@ -27,8 +28,10 @@ export interface LinkDirectorySettings {
 	graphLabels: "all" | "route";
 	/** Tree graph: characters of a name shown before it is cut short with "…". */
 	graphLabelChars: number;
-	/** Tree graph: keep the notes linked from the same note together, on a background colour. */
+	/** Tree graph: keep the notes linked from the same note together, on a grey background. */
 	graphGroups: boolean;
+	/** Tree graph: the tab's own colours, or Obsidian's. */
+	graphTheme: GraphTheme;
 	/** Tree graph: wrap a layer longer than this many pixels (0 = never). */
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
@@ -58,6 +61,7 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphLabels: "all",
 	graphLabelChars: 10,
 	graphGroups: true,
+	graphTheme: "auto",
 	graphMaxLength: 1200,
 	graphFocus: false,
 	graphFocusHops: 1,
@@ -305,6 +309,19 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 					s.graphGroups = v;
 					save();
 				}),
+			);
+
+		new Setting(containerEl)
+			.setName(t("setGraphTheme"))
+			.setDesc(t("setGraphThemeDesc"))
+			.addDropdown((d) =>
+				d
+					.addOptions({ auto: t("setGraphThemeAuto"), light: t("setGraphThemeLight"), dark: t("setGraphThemeDark") })
+					.setValue(s.graphTheme)
+					.onChange((v) => {
+						s.graphTheme = v as GraphTheme;
+						save();
+					}),
 			);
 
 		new Setting(containerEl)
