@@ -4,6 +4,9 @@ import { t } from "./i18n";
 import type { Direction } from "./layered";
 import type { GraphTheme } from "./theme";
 
+/** Whose backlinks the tree graph shows: the open note's, or those of every note on the route to it. */
+export type BackFrom = "open" | "route";
+
 export interface LinkDirectorySettings {
 	rootMode: "active" | "fixed";
 	fixedRootPath: string;
@@ -40,6 +43,10 @@ export interface LinkDirectorySettings {
 	graphOutHops: number;
 	/** Tree graph, focus or not: show and colour what reaches the open note by up to this many links (its backlinks), from outside the graph too. */
 	graphBackHops: number;
+	/** Tree graph: the backlinks to the open note only, or to every note on the route (hops from the nearest). */
+	graphBackFrom: BackFrom;
+	/** Tree graph: write each coloured note's hops in its dot. */
+	graphHopNumbers: boolean;
 	/** Tree graph: run a short light along the coloured lines, base to tip. */
 	graphFlow: boolean;
 }
@@ -68,6 +75,8 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphFocus: false,
 	graphOutHops: 1,
 	graphBackHops: 1,
+	graphBackFrom: "open",
+	graphHopNumbers: false,
 	graphFlow: true,
 };
 
@@ -345,6 +354,19 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 		hops(t("setGraphBackHops"), t("setGraphBackHopsDesc"), () => s.graphBackHops, (n) => (s.graphBackHops = n));
 
 		new Setting(containerEl)
+			.setName(t("setGraphBackFrom"))
+			.setDesc(t("setGraphBackFromDesc"))
+			.addDropdown((d) =>
+				d
+					.addOptions({ open: t("setGraphBackFromOpen"), route: t("setGraphBackFromRoute") })
+					.setValue(s.graphBackFrom)
+					.onChange((v) => {
+						s.graphBackFrom = v as BackFrom;
+						save();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName(t("setGraphFocus"))
 			.setDesc(t("setGraphFocusDesc"))
 			.addToggle((tg) =>
@@ -357,6 +379,16 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 
 		// The outgoing links' hops count only while focused: unfocused, every hop is coloured.
 		if (s.graphFocus) hops(t("setGraphOutHops"), t("setGraphOutHopsDesc"), () => s.graphOutHops, (n) => (s.graphOutHops = n));
+
+		new Setting(containerEl)
+			.setName(t("setGraphHopNumbers"))
+			.setDesc(t("setGraphHopNumbersDesc"))
+			.addToggle((tg) =>
+				tg.setValue(s.graphHopNumbers).onChange((v) => {
+					s.graphHopNumbers = v;
+					save();
+				}),
+			);
 
 		new Setting(containerEl)
 			.setName(t("setGraphFlow"))

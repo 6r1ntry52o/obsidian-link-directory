@@ -55,13 +55,14 @@ const en = {
 	graphLegendRoute: "routes from the root to the open note (every shortest one)",
 	graphLegendOpenLinks: "outgoing links from the open note (hops)",
 	graphLegendBacklinks: "backlinks to the open note (hops)",
+	graphLegendBacklinksRoute: "backlinks to the notes on the route (hops from the nearest)",
 	graphLegendOutside: "{where}: backlinks from notes the root cannot reach, each a column before the note it links to",
 	graphBelow: "below",
 	graphBeside: "right",
 	graphLegendGroup: "background: notes linked from the same note",
 	graphHidden: "{n} notes hidden (away from the route)",
 	graphFocusOn:
-		"Showing: the route, the notes it links to, and the open note's outgoing links and backlinks within the hops chosen beside (click for every note)",
+		"Showing: the route, the notes it links to, and the outgoing links and backlinks within the hops chosen beside (click for every note)",
 	graphFocusOff: "Showing: every note (click for the route and the notes around it)",
 	graphHop: "{n} hop",
 	graphHops: "{n} hops",
@@ -69,6 +70,10 @@ const en = {
 	graphHopsNone: "None",
 	graphOutHops: "Outgoing links from the open note: how many hops to show (with focus on; off, every hop is coloured)",
 	graphBackHops: "Backlinks to the open note: how many hops to show, from notes the root reaches or not",
+	graphBackHopsRoute:
+		"Backlinks to every note on the route: how many hops to show, counted from the nearest, from notes the root reaches or not",
+	graphBackFromOpen: "Backlinks to: the open note (click for every note on the route)",
+	graphBackFromRoute: "Backlinks to: every note on the route, the root's too (click for the open note only)",
 	graphSearchPlaceholder: "Search names, #tag",
 	graphSearchHelp:
 		"Find notes by a part of their name, or by #tag (#pro finds #project too); several words must all match. Enter: go to the next hit, Shift+Enter: the one before.",
@@ -76,13 +81,21 @@ const en = {
 	graphSearchHidden: "{n} hidden",
 	setGraphFocus: "Only the route and its links",
 	setGraphFocusDesc:
-		"Hide notes that are neither on the route from the root to the open note, nor linked from a note on it, nor within the hops chosen from the open note (its backlinks above, its outgoing links below). Without a route: the root and the notes it links to.",
+		"Hide notes that are neither on the route from the root to the open note, nor linked from a note on it, nor within the hops chosen (the backlinks above, the open note's outgoing links below). Without a route: the root and the notes it links to.",
 	setGraphOutHops: "Hops from the open note: outgoing links",
 	setGraphOutHopsDesc:
-		"Showing only the route and its links: how far to follow the open note's links, the notes it links to (1), the notes those link to (2), and so on, shown in the outgoing colour, paler with each hop, with their hops in the dot. Showing every note, they are coloured all the way. The header has the same choice while the route is shown.",
+		"Showing only the route and its links: how far to follow the open note's links, the notes it links to (1), the notes those link to (2), and so on, shown in the outgoing colour, paler with each hop. Showing every note, they are coloured all the way. The header has the same choice while the route is shown.",
 	setGraphBackHops: "Hops from the open note: backlinks",
 	setGraphBackHopsDesc:
-		"Showing only the route or every note: how far to follow the links into the open note, the notes that link to it (1), the notes that link to those (2), and so on. They take the backlink colour, paler with each hop, with their hops in the dot; those on the route keep its colour. Notes the root cannot reach are drawn too, each a column before the note it links to, in a block below the graph (to its right when it grows down). The header has the same choice.",
+		"Showing only the route or every note: how far to follow the links into the open note (or into every note on the route, below), the notes that link to it (1), the notes that link to those (2), and so on. They take the backlink colour, paler with each hop; those on the route keep its colour. Notes the root cannot reach are drawn too, each a column before the note it links to, in a block below the graph (to its right when it grows down). The header has the same choice.",
+	setGraphBackFrom: "Backlinks to",
+	setGraphBackFromDesc:
+		"Whose backlinks to show: the open note's only, or those of every note on the route from the root to it, the root's too. Their hops then count from the nearest note on the route. The header has the same switch beside the backlinks' hops.",
+	setGraphBackFromOpen: "The open note",
+	setGraphBackFromRoute: "Every note on the route",
+	setGraphHopNumbers: "Hops in the dots",
+	setGraphHopNumbersDesc:
+		"Write each coloured note's hops in its dot (a backlink to the route: from the nearest note on it). A note found both ways shows only the nearer. Off, the shade tells them (the legend shows which is which), and pointing at a note shows them.",
 	setGraphFlow: "Flowing light on the coloured lines",
 	setGraphFlowDesc:
 		"A short light runs along the route and the coloured links around the open note, from base to tip, so the direction reads at a glance. It runs even when the system asks for reduced motion: turn it off here, or with the header button.",
@@ -196,13 +209,14 @@ const ja: typeof en = {
 	graphLegendRoute: "ルート→開いているノートの道筋（最短の道すべて）",
 	graphLegendOpenLinks: "開いているノートからの発リンク（階層）",
 	graphLegendBacklinks: "開いているノートへのバックリンク（階層）",
+	graphLegendBacklinksRoute: "道筋上のノートへのバックリンク（いちばん近いノートからの階層）",
 	graphLegendOutside: "{where}: ルートから辿れないノートからのバックリンク（リンク先の 1 つ前の列）",
 	graphBelow: "下",
 	graphBeside: "右",
 	graphLegendGroup: "背景色: 同じノートからのリンク先",
 	graphHidden: "{n} 本を非表示（道筋の周りの外）",
 	graphFocusOn:
-		"表示: 道筋とその直接のリンク先、開いているノートから隣で選んだ階層までの発リンク・バックリンク（クリックですべて）",
+		"表示: 道筋とその直接のリンク先、隣で選んだ階層までの発リンク・バックリンク（クリックですべて）",
 	graphFocusOff: "表示: すべてのノート（クリックで道筋の周りだけ）",
 	graphHop: "{n} 階層",
 	graphHops: "{n} 階層",
@@ -210,6 +224,9 @@ const ja: typeof en = {
 	graphHopsNone: "なし",
 	graphOutHops: "開いているノートからの発リンク: 表示する階層（道筋の周りだけ表示のとき。OFF では全階層に色を付ける）",
 	graphBackHops: "開いているノートへのバックリンク: 表示する階層（ルートから辿れないノートも含む）",
+	graphBackHopsRoute: "道筋上のすべてのノートへのバックリンク: 表示する階層（いちばん近いノートから数える。ルートから辿れないノートも含む）",
+	graphBackFromOpen: "バックリンクの起点: 開いているノート（クリックで道筋上のすべてのノート）",
+	graphBackFromRoute: "バックリンクの起点: 道筋上のすべてのノート、ルートも（クリックで開いているノートだけ）",
 	graphSearchPlaceholder: "名前・#タグで検索",
 	graphSearchHelp:
 		"名前の一部、または #タグ でノートを探す（#pro で #project も当たる）。語を空白で区切ると、すべてに当たるノートだけ。Enter で次のヒットへ、Shift+Enter で前へ。",
@@ -217,13 +234,21 @@ const ja: typeof en = {
 	graphSearchHidden: "うち {n} 件は非表示",
 	setGraphFocus: "道筋の周りだけ表示",
 	setGraphFocusDesc:
-		"ルート→開いているノートの道筋にも、道筋のノートからのリンク先にも、開いているノートから選んだ階層まで（上のバックリンク・下の発リンク）にもないノートを隠す。道筋がないときは、ルートとそのリンク先だけ。",
+		"ルート→開いているノートの道筋にも、道筋のノートからのリンク先にも、選んだ階層まで（上のバックリンク・下の開いているノートからの発リンク）にもないノートを隠す。道筋がないときは、ルートとそのリンク先だけ。",
 	setGraphOutHops: "開いているノートから表示する階層（発リンク）",
 	setGraphOutHopsDesc:
-		"「道筋の周りだけ表示」のとき、開いているノートからリンクを何階層まで辿って表示するか。リンク先（1）、そのリンク先（2）…。発リンクの色で示し（階層ごとに薄く）、○に階層の数を出す。OFF のときは全階層に色を付ける。ON の間はヘッダーでも選べる。",
+		"「道筋の周りだけ表示」のとき、開いているノートからリンクを何階層まで辿って表示するか。リンク先（1）、そのリンク先（2）…。発リンクの色で示す（階層ごとに薄く）。OFF のときは全階層に色を付ける。ON の間はヘッダーでも選べる。",
 	setGraphBackHops: "開いているノートから表示する階層（バックリンク）",
 	setGraphBackHopsDesc:
-		"「道筋の周りだけ表示」の ON・OFF にかかわらず、開いているノートへのリンクを何階層まで遡って表示するか。このノートにリンクしているノート（1）、そこにリンクしているノート（2）…。バックリンクの色で示し（階層ごとに薄く、道筋上のものは道筋の色のまま）、○に階層の数を出す。ルートから辿れないノートも、リンク先の 1 つ前の列に、グラフの下（上→下では右）にまとめて表示する。ヘッダーでも選べる。",
+		"「道筋の周りだけ表示」の ON・OFF にかかわらず、開いているノート（下で選べば道筋上のすべてのノート）へのリンクを何階層まで遡って表示するか。このノートにリンクしているノート（1）、そこにリンクしているノート（2）…。バックリンクの色で示す（階層ごとに薄く、道筋上のものは道筋の色のまま）。ルートから辿れないノートも、リンク先の 1 つ前の列に、グラフの下（上→下では右）にまとめて表示する。ヘッダーでも選べる。",
+	setGraphBackFrom: "バックリンクの起点",
+	setGraphBackFromDesc:
+		"どのノートへのバックリンクを表示するか。開いているノートだけか、ルート→開いているノートの道筋上のすべてのノート（ルートも含む）か。後者の階層は、いちばん近い道筋のノートから数える。ヘッダーのバックリンクの階層の隣でも切り替えられる。",
+	setGraphBackFromOpen: "開いているノート",
+	setGraphBackFromRoute: "道筋上のすべてのノート",
+	setGraphHopNumbers: "○に階層の数を表示",
+	setGraphHopNumbersDesc:
+		"色の付いたノートの○に階層の数を書く（道筋へのバックリンクは、いちばん近い道筋のノートから）。両方向から届くノートは近いほうだけ。OFF のときは色の濃さで示し（凡例に対応あり）、ノートにカーソルを合わせると表示される。",
 	setGraphFlow: "色付きの線に光を流す",
 	setGraphFlowDesc:
 		"道筋と、開いているノートの周りの色付きのリンクに、根本から先端へ短い光を流して向きを示す。OS でアニメーションを切っていても流れる（止めるならここかヘッダーのボタンで OFF）。",

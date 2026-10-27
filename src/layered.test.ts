@@ -266,6 +266,17 @@ describe("reachFrom", () => {
 		expect(hopsOf(r.edges)).toEqual({ "A\u0000O": 1, "X\u0000O": 1, "B\u0000X": 2, "Y\u0000X": 2, "R\u0000B": 3 });
 		expect(hopsOf(reachFrom(g, "O.md", route, true, 1).nodes)).toEqual({ X: 1 });
 	});
+
+	it("walks from several notes at once, counting from the nearest", () => {
+		// R → A → B → C → D; from A and C together, D is 1 hop (from C), not 3
+		const g = buildLayers(fake({ R: ["A"], A: ["B"], B: ["C"], C: ["D"], D: [] }), "R.md", opts);
+		const r = reachFrom(g, ["A.md", "C.md"]);
+		expect(hopsOf(r.nodes)).toEqual({ B: 1, D: 1 });
+		// B → C runs into a start, which is never reached again
+		expect(hopsOf(r.edges)).toEqual({ "A B": 1, "C D": 1 });
+		// a start the graph does not have is left out
+		expect(hopsOf(reachFrom(g, ["Lost.md", "C.md"]).nodes)).toEqual({ D: 1 });
+	});
 });
 
 describe("around", () => {
@@ -300,6 +311,20 @@ describe("around", () => {
 		expect(hopsOf(both.out.nodes)).toEqual({ X: 1 });
 		expect(both.back.nodes.size).toBe(0);
 		expect(hopsOf(both.back.edges)).toEqual({ "X\u0000O": 1 });
+	});
+
+	it("takes the backlinks of every note on the route, counted from the nearest, when asked", () => {
+		// route R → A → O; X (row 2) links back up to A, B to X, Y to the root
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["O"], B: ["X", "Y"], X: ["A"], Y: ["R"], O: [] }), "R.md", opts);
+		const hl = pathToRoot(g, "O.md");
+		if (!hl) throw new Error("no route");
+		// only the open note's: the route's link A → O is no backlink of its own
+		expect(around(g, "O.md", hl, -1, -1).back.edges.size).toBe(0);
+		const { back } = around(g, "O.md", hl, -1, -1, true);
+		expect(hopsOf(back.nodes)).toEqual({ X: 1, Y: 1, B: 2 });
+		// B → Y is 2 hops back through Y, as B → X through X; R → B leaves the route, so it is none
+		expect(hopsOf(back.edges)).toEqual({ "X A": 1, "Y R": 1, "B X": 2, "B Y": 2 });
+		expect(hopsOf(around(g, "O.md", hl, -1, 1, true).back.nodes)).toEqual({ X: 1, Y: 1 });
 	});
 
 	it("keeps each walk to its own hops", () => {
@@ -394,6 +419,15 @@ describe("focusOn", () => {
 		expect(names(focusOn(g, route, "O.md", 1, -1))).toEqual([["R"], ["A", "B"], ["O", "C"], ["D"], ["E"]]);
 	});
 
+	it("keeps the backlinks of every note on the route when asked", () => {
+		// route R → A → O; X (under B) links back up to A, C (under X) to X
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["O"], B: ["X"], X: ["C", "A"], C: ["X"], O: [] }), "R.md", opts);
+		const route = pathToRoot(g, "O.md")?.nodes ?? new Set<string>();
+		expect(names(focusOn(g, route, "O.md", 1, 1))).toEqual([["R"], ["A", "B"], ["O"]]);
+		expect(names(focusOn(g, route, "O.md", 1, 1, true))).toEqual([["R"], ["A", "B"], ["O", "X"]]);
+		expect(names(focusOn(g, route, "O.md", 1, 2, true))).toEqual([["R"], ["A", "B"], ["O", "X"], ["C"]]);
+	});
+
 	it("gives the same route on the focused graph", () => {
 		const g = buildLayers(fake(sketch), "R.md", opts);
 		const full = pathToRoot(g, "G5.md");
@@ -453,6 +487,21 @@ describe("addBacklinks", () => {
 		const two = add(adj, "O.md").b;
 		expect(two.nodes.get("X.md")?.depth).toBe(1);
 		expect(kinds(two).filter((k) => k.startsWith("X>"))).toEqual(["X>Y2:down", "X>Y1:down"]);
+	});
+
+	it("takes the notes from outside linking to any note on the route, a column before the nearest", () => {
+		// route R → A → O; Lost links to the root, Out1 to A, Out2 to Out1; X (in the graph) to A
+		const adj = { R: ["A", "B"], A: ["O"], B: ["X"], X: ["A"], O: [], Lost: ["R"], Out1: ["A"], Out2: ["Out1"] };
+		const src = fake(adj);
+		const g = buildLayers(src, "R.md", opts);
+		const route = pathToRoot(g, "O.md")?.nodes ?? new Set<string>();
+		// to the open note only: none
+		expect(addBacklinks(g, g, src, "O.md", route, -1, opts).outside.size).toBe(0);
+		const b = addBacklinks(g, g, src, route, route, -1, opts);
+		// Lost before the root, Out1 before A, Out2 before Out1: the root's own link goes first
+		expect(columns(b)).toEqual({ 0: ["Out1"], [-1]: ["Lost", "Out2"] });
+		expect(kinds(b).slice(g.edges.length).sort()).toEqual(["Lost>R:down", "Out1>A:down", "Out2>Out1:down"]);
+		expect(columns(addBacklinks(g, g, src, route, route, 1, opts))).toEqual({ 0: ["Out1"], [-1]: ["Lost"] });
 	});
 
 	it("stops at the search limit", () => {
