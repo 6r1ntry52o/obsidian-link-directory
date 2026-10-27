@@ -303,7 +303,7 @@
 .ldg-node.is-unresolved.is-link .ldg-dot {
 	stroke: var(--ldg-hop);
 }
-/* Its hops from the open note, in its dot (made larger for it): black or
+/* Its hops, in its dot (made larger for it) when the setting asks: black or
    white, whichever reads better on the dot's shade (the lightness where both
    give the same contrast is about 49). */
 .ldg-hop-num {
