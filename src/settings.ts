@@ -4,7 +4,7 @@ import { t } from "./i18n";
 import type { Direction } from "./layered";
 import type { GraphTheme } from "./theme";
 
-/** Whose backlinks the tree graph shows: the open note's, or those of every note on the route to it. */
+/** Which backlinks the tree graph colours: the open note's, or those of every note on the route to it. */
 export type BackFrom = "open" | "route";
 
 export interface LinkDirectorySettings {
@@ -41,9 +41,9 @@ export interface LinkDirectorySettings {
 	graphFocus: boolean;
 	/** Tree graph, focus: show and colour what the open note reaches by up to this many links (HOPS_ALL = any number, 0 = none); unfocused, every hop is coloured. */
 	graphOutHops: number;
-	/** Tree graph, focus or not: show and colour what reaches the open note by up to this many links (its backlinks), from outside the graph too. */
+	/** Tree graph, focus or not: show what reaches a note shown by up to this many links (backlinks), from outside the graph too; graphBackFrom says which are coloured. */
 	graphBackHops: number;
-	/** Tree graph: the backlinks to the open note only, or to every note on the route (hops from the nearest). */
+	/** Tree graph: colour the backlinks to the open note only, or to every note on the route (hops from the nearest). */
 	graphBackFrom: BackFrom;
 	/** Tree graph: write each coloured note's hops in its dot. */
 	graphHopNumbers: boolean;

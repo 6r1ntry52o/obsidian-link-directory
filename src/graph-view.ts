@@ -18,6 +18,7 @@ import {
 	around,
 	buildLayers,
 	edgeKey,
+	focusCore,
 	focusOn,
 	groupLayers,
 	groupTones,
@@ -99,12 +100,13 @@ export class TreeGraphView extends ItemView {
 	private hits: string[] = [];
 	private hitAt = -1;
 	/**
-	 * The note the route, the colours and the backlinks are drawn for: the open
-	 * note, or, while the open note is one of the backlinks drawn outside the
-	 * graph, the note they were drawn for (so opening one keeps them).
+	 * The note the route and the colours are drawn for (and with focus, the
+	 * notes shown): the open note, or, while the open note is one of the
+	 * backlinks drawn outside the graph, the note they were drawn for (so
+	 * opening one keeps them).
 	 */
 	private anchor: string | null = null;
-	/** The anchor the layout was made for (it depends on it with focus on, and with backlinks). */
+	/** The anchor the layout was made for (it depends on it with focus on). */
 	private drawnFor: string | null = null;
 	/** The note each drawn note goes with (groupLayers), or null when rows are not grouped. */
 	private owners: Map<string, string> | null = null;
@@ -373,24 +375,25 @@ export class TreeGraphView extends ItemView {
 		};
 		this.owners = arrange(full);
 		this.full = full;
-		// Focus: only the route to the open note, the notes linked from it and
-		// what the open note reaches, or what reaches it (or the route), within
-		// the chosen hops (the root and its links when there is no route), laid out afresh.
+		// What is shown before the backlinks: every note, or with focus only the
+		// route to the open note, the notes linked from it and what the open note
+		// reaches within the chosen hops (the root and its links when there is no
+		// route), laid out afresh with the backlinks of them all that the root reaches.
 		const anchor = this.anchor;
-		const hl = anchor ? pathToRoot(full, anchor) : null;
-		const fromRoute = s.graphBackFrom === "route";
 		let g = full;
+		let core: ReadonlySet<string> = new Set(full.nodes.keys());
 		let route: string | null = null;
 		if (s.graphFocus) {
+			const hl = anchor ? pathToRoot(full, anchor) : null;
 			route = hl ? anchor : null;
-			g = focusOn(full, hl?.nodes ?? new Set([full.root]), route ?? undefined, s.graphOutHops, s.graphBackHops, fromRoute);
+			core = focusCore(full, hl?.nodes ?? new Set([full.root]), route ?? undefined, s.graphOutHops);
+			g = focusOn(full, core, s.graphBackHops);
 			this.owners = arrange(g);
 		}
-		// Focus or not, the backlinks within the hops chosen (to the open note, or
-		// to every note on the route): those the root does not reach are added in a block of their own.
-		if (anchor && hl && s.graphBackHops !== 0) {
-			g = addBacklinks(g, full, src, fromRoute ? hl.nodes : anchor, hl.nodes, s.graphBackHops, s);
-		}
+		// Focus or not, the backlinks of every note shown within the hops chosen:
+		// those the root does not reach are added in a block of their own. Which
+		// of them are coloured (to the open note, or the route) is applyHighlight's.
+		if (s.graphBackHops !== 0) g = addBacklinks(g, full, src, core, core, s.graphBackHops, s);
 		this.drawnFor = anchor;
 		this.graph = g;
 
@@ -403,7 +406,7 @@ export class TreeGraphView extends ItemView {
 			s.graphLabels,
 			s.graphMaxLength,
 			s.graphGroups,
-			s.graphFocus ? `focus:${route ?? ""}:${s.graphOutHops}:${s.graphBackHops}:${s.graphBackFrom}` : "",
+			s.graphFocus ? `focus:${route ?? ""}:${s.graphOutHops}:${s.graphBackHops}` : "",
 		].join("|");
 		if (layoutKey !== this.layoutKey) this.fitted = false;
 		this.layoutKey = layoutKey;
@@ -1212,15 +1215,15 @@ export class TreeGraphView extends ItemView {
 
 	/**
 	 * The open note changed. The anchor follows it, unless it is one of the
-	 * backlinks drawn outside the graph: those stay, with it marked among them.
-	 * Lay out again when the notes shown depend on the anchor (focus, or
-	 * backlinks), else only recolour.
+	 * backlinks drawn outside the graph: the colours stay, with it marked among
+	 * them. Lay out again when the notes shown depend on the anchor (focus),
+	 * else only recolour.
 	 */
 	private setActive(path: string, center: boolean): void {
 		this.activePath = path;
 		if (this.full?.nodes.has(path) || !this.graph?.nodes.get(path)?.outside) this.anchor = path;
 		const s = this.plugin.settings;
-		if ((s.graphFocus || s.graphBackHops !== 0) && this.drawnFor !== this.anchor) this.render(center);
+		if (s.graphFocus && this.drawnFor !== this.anchor) this.render(center);
 		else this.applyHighlight(center);
 	}
 
@@ -1361,7 +1364,7 @@ export class TreeGraphView extends ItemView {
 			starts: this.starts.map(Math.round),
 			first: this.first,
 			groups: this.owners ? groups : null,
-			hidden: (this.full?.nodes.size ?? 0) - g.nodes.size,
+			hidden: [...(this.full?.nodes.keys() ?? [])].filter((n) => !g.nodes.has(n)).length,
 			route: hl ? route(hl.edges) : null,
 			reach: hopsOf(near?.out),
 			back: hopsOf(near?.back),

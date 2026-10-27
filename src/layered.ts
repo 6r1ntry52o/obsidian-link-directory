@@ -248,30 +248,33 @@ export function groupTones(layer: readonly string[], sub: (id: string) => number
 }
 
 /**
- * The part of the graph around a route: the route's notes and every note one
- * of them links to (down, within a layer or back up), the notes `from` (the
- * open note, on the route) reaches by up to `outHops` links, and the notes
- * that reach it by up to `backHops` (its backlinks, theirs, …; negative = any
- * number, 0 = none), or with `backFromRoute` that reach any note on the route,
- * neither walk going on through the route, as `around` colours them. Depths stay as in the full graph, so a row still means a link
- * distance from the root. The route reaches every depth up to its end and a
- * link goes at most one row further, but a backlink can sit any number of rows
- * down: the rows between may then be empty (place() leaves a gap for each).
+ * The notes focus shows before any backlinks: the root, the route's notes and
+ * every note one of them links to (down, within a layer or back up), and the
+ * notes `from` (the open note, on the route) reaches by up to `outHops` links
+ * (negative = any number, 0 = none), not going on through the route, as
+ * `around` colours them.
  */
-export function focusOn(
-	g: LayeredGraph,
-	route: Set<string>,
-	from?: string,
-	outHops = 1,
-	backHops = 0,
-	backFromRoute = false,
-): LayeredGraph {
-	const keep = new Set<string>([g.root, ...route]);
-	for (const e of g.edges) if (route.has(e.from)) keep.add(e.to);
+export function focusCore(g: LayeredGraph, route: ReadonlySet<string>, from?: string, outHops = 1): Set<string> {
+	const core = new Set<string>([g.root, ...route]);
+	for (const e of g.edges) if (route.has(e.from)) core.add(e.to);
 	if (from !== undefined && route.has(from)) {
-		for (const id of reachFrom(g, from, route, false, outHops).nodes.keys()) keep.add(id);
-		for (const id of reachFrom(g, backFromRoute ? route : from, route, true, backHops).nodes.keys()) keep.add(id);
+		for (const id of reachFrom(g, from, route, false, outHops).nodes.keys()) core.add(id);
 	}
+	return core;
+}
+
+/**
+ * The part of the graph focus shows: `core` (focusCore) and the notes that
+ * reach one of them by up to `backHops` links (their backlinks, theirs, …,
+ * counted from the nearest; negative = any number, 0 = none). Depths stay as
+ * in the full graph, so a row still means a link distance from the root. The
+ * route reaches every depth up to its end and a link goes at most one row
+ * further, but a backlink can sit any number of rows down: the rows between
+ * may then be empty (place() leaves a gap for each).
+ */
+export function focusOn(g: LayeredGraph, core: ReadonlySet<string>, backHops = 0): LayeredGraph {
+	const keep = new Set<string>([g.root, ...core]);
+	for (const id of reachFrom(g, core, core, true, backHops).nodes.keys()) keep.add(id);
 	const nodes = new Map<string, GraphNode>();
 	for (const [id, n] of g.nodes) {
 		if (keep.has(id)) nodes.set(id, { ...n, parents: n.parents.filter((p) => keep.has(p)) });
@@ -284,13 +287,14 @@ export function focusOn(
 }
 
 /**
- * Adds the notes the root does not reach that link to `into` (the open note, or
- * every note on the route), the notes that link to those, and so on, up to
+ * Adds the notes the root does not reach that link to `into` (every note
+ * shown before the backlinks), the notes that link to those, and so on, up to
  * `hops` links back from the nearest (negative = any number, 0 = none), the
- * walk not going on through a `stop` note (the route), as `around` walks back
- * inside the graph. `full` is the whole graph the root reaches (`g` itself, or
- * what `g` was focused from): a note in it keeps its own place, and is left
- * out when `g` does not show it.
+ * walk not going on through a `stop` note (`into` itself), as focusOn walks
+ * back inside the graph: it goes on through the graph's notes `g` shows that
+ * are not `stop` notes (the backlinks focus keeps). `full` is the whole graph
+ * the root reaches (`g` itself, or what `g` was focused from): a note in it
+ * keeps its own place, and is left out when `g` does not show it.
  *
  * A note from outside sits one column before the nearest of the notes it links
  * to on the way back (so a column can come before the root's), in the order of
