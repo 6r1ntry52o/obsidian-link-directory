@@ -36,9 +36,9 @@ export interface LinkDirectorySettings {
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
 	graphFocus: boolean;
-	/** Tree graph: colour (and, focused, show) what the open note reaches by up to this many links (HOPS_ALL = any number, 0 = none). */
+	/** Tree graph, focus: show and colour what the open note reaches by up to this many links (HOPS_ALL = any number, 0 = none); unfocused, every hop is coloured. */
 	graphOutHops: number;
-	/** Tree graph: the same for what reaches the open note, its backlinks. */
+	/** Tree graph, focus or not: show and colour what reaches the open note by up to this many links (its backlinks), from outside the graph too. */
 	graphBackHops: number;
 	/** Tree graph: run a short light along the coloured lines, base to tip. */
 	graphFlow: boolean;
@@ -342,7 +342,6 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 						save();
 					});
 				});
-		hops(t("setGraphOutHops"), t("setGraphOutHopsDesc"), () => s.graphOutHops, (n) => (s.graphOutHops = n));
 		hops(t("setGraphBackHops"), t("setGraphBackHopsDesc"), () => s.graphBackHops, (n) => (s.graphBackHops = n));
 
 		new Setting(containerEl)
@@ -352,8 +351,12 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 				tg.setValue(s.graphFocus).onChange((v) => {
 					s.graphFocus = v;
 					save();
+					this.display();
 				}),
 			);
+
+		// The outgoing links' hops count only while focused: unfocused, every hop is coloured.
+		if (s.graphFocus) hops(t("setGraphOutHops"), t("setGraphOutHopsDesc"), () => s.graphOutHops, (n) => (s.graphOutHops = n));
 
 		new Setting(containerEl)
 			.setName(t("setGraphFlow"))

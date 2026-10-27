@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TREE_OPTIONS } from "./graph";
 import {
+	addBacklinks,
 	around,
 	buildLayers,
 	countCrossings,
@@ -403,6 +404,64 @@ describe("focusOn", () => {
 	});
 });
 
+describe("addBacklinks", () => {
+	const add = (adj: Record<string, string[]>, open: string, hops = -1, extra = {}) => {
+		const src = fake(adj);
+		const g = buildLayers(src, "R.md", opts);
+		const route = pathToRoot(g, open)?.nodes ?? new Set<string>();
+		return { g, b: addBacklinks(g, g, src, open, route, hops, { ...opts, ...extra }) };
+	};
+	const columns = (b: LayeredGraph) =>
+		Object.fromEntries([...b.outside].map(([c, ids]) => [c, ids.map((id) => b.nodes.get(id)?.display)]));
+
+	it("puts each note from outside a column before the note it links to, on and on before the root's", () => {
+		// route R → A → O; X1 and X2 link to O, Y to X1, Z to Y; Lost links only to the root
+		const adj = { R: ["A"], A: ["O"], O: [], X1: ["O"], X2: ["O"], Y: ["X1"], Z: ["Y"], Lost: ["R"] };
+		const { g, b } = add(adj, "O.md");
+		expect(columns(b)).toEqual({ 1: ["X1", "X2"], 0: ["Y"], [-1]: ["Z"] });
+		expect(b.nodes.get("Z.md")).toMatchObject({ depth: -1, outside: true, parents: [] });
+		expect(kinds(b).slice(g.edges.length)).toEqual(["X1>O:down", "X2>O:down", "Y>X1:down", "Z>Y:down"]);
+		// the rows of the graph stay as they were, and so does `g`
+		expect(names(b)).toEqual(names(g));
+		expect(g.nodes.has("X1.md")).toBe(false);
+		expect(columns(add(adj, "O.md", 1).b)).toEqual({ 1: ["X1", "X2"] });
+		expect(add(adj, "O.md", 0).b.outside.size).toBe(0);
+	});
+
+	it("orders a column by the notes it links to in the next one, then by name", () => {
+		// open A: W and X link to A; Q to W, P to X
+		const { b } = add({ R: ["A"], A: [], X: ["A"], W: ["A"], P: ["X"], Q: ["W"] }, "A.md");
+		expect(columns(b)).toEqual({ 0: ["W", "X"], [-1]: ["Q", "P"] });
+	});
+
+	it("leaves the notes the root reaches in their rows, and walks on through them", () => {
+		// Y is in the graph (row 2, beside O) and links to O; X, from outside, links to Y
+		const { b } = add({ R: ["A", "B"], A: ["O"], B: ["Y"], Y: ["O"], O: [], X: ["Y"], Lost: ["R", "A"] }, "O.md");
+		expect(columns(b)).toEqual({ 1: ["X"] });
+		expect(b.nodes.get("Y.md")?.outside).toBeUndefined();
+		expect(kinds(b)).toContain("X>Y:down");
+		// not on through the route: the root's own backlinks stay out
+		expect(b.nodes.has("Lost.md")).toBe(false);
+	});
+
+	it("adds only the links on a shortest way back, all running forward", () => {
+		// X links to O (1 hop) and to Y (Y links to O: a 2-hop way), so only X → O
+		const one = add({ R: ["A"], A: ["O"], O: ["P"], P: ["Y"], Y: ["O"], X: ["O", "Y"] }, "O.md").b;
+		expect(kinds(one).filter((k) => k.startsWith("X>"))).toEqual(["X>O:down"]);
+		// X is two hops back through Y1 (row 3) and Y2 (row 2): it sits before the nearer column
+		const adj = { R: ["A", "B"], A: ["O"], B: ["Y2"], Y2: ["O"], O: ["P"], P: ["Y1"], Y1: ["O"], X: ["Y1", "Y2"] };
+		const two = add(adj, "O.md").b;
+		expect(two.nodes.get("X.md")?.depth).toBe(1);
+		expect(kinds(two).filter((k) => k.startsWith("X>"))).toEqual(["X>Y2:down", "X>Y1:down"]);
+	});
+
+	it("stops at the search limit", () => {
+		const { b } = add({ R: ["O"], O: [], X1: ["O"], X2: ["O"], X3: ["O"] }, "O.md", -1, { maxNodes: 2 });
+		expect(b.outside.get(0)).toHaveLength(2);
+		expect(b.truncated).toBe(true);
+	});
+});
+
 describe("place", () => {
 	// depth 20 + layerGap 60 = 80 between layers; depth 20 + subGap 10 = 30 between sub-rows
 	const base = { direction: "down", layerGap: 60, subGap: 10, gap: 14, maxLength: 0 } as const;
@@ -498,6 +557,22 @@ describe("place", () => {
 		expect(starts).toEqual([0, 80, 160, 240, 300]);
 		expect(ports).toEqual([20, 100, 180, 240, 320]);
 		expect(get(points, "E.md").y).toBe(300);
+	});
+
+	it("puts the notes outside the graph in a block of their own, columns before the root's first", () => {
+		// open A (R → A): X links to A, Z to X
+		const src = fake({ R: ["A"], A: [], X: ["A"], Z: ["X"] });
+		const g = buildLayers(src, "R.md", opts);
+		const b = addBacklinks(g, g, src, "A.md", new Set(["R.md", "A.md"]), -1, opts);
+		const { points, starts, ports, first } = place(b, () => 20, depth, { ...base, blockGap: 30 });
+		expect(first).toBe(-1);
+		expect(starts).toEqual([0, 80, 160]);
+		expect(ports).toEqual([20, 100, 180]);
+		// the graph centred on 0; the block past its half width (10), the gap (30) and its own half width (10)
+		expect(get(points, "R.md")).toMatchObject({ x: 0, y: 80 });
+		expect(get(points, "A.md")).toMatchObject({ x: 0, y: 160 });
+		expect(get(points, "X.md")).toMatchObject({ x: 50, y: 80 });
+		expect(get(points, "Z.md")).toMatchObject({ x: 50, y: 0 });
 	});
 
 	it("starts a wrapped sub-row after the deepest node of the one before", () => {
