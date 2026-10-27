@@ -1,12 +1,26 @@
 name: Release
 
-# Push a tag named after the version in manifest.json (e.g. 0.9.0) to test and
-# build the plugin and publish a release with main.js, manifest.json and
-# styles.css. An annotated tag's message becomes the release notes.
+# Publishes a release with main.js, manifest.json and styles.css, after testing
+# and building the plugin, in either of two ways:
+# - push a tag named after the version in manifest.json (e.g. 0.9.0): an
+#   annotated tag's message becomes the release notes;
+# - or run it by hand (Actions → Release → Run workflow) with the version: it
+#   tags the commit given (default: the branch it runs on) with the notes given.
 on:
   push:
     tags:
       - "*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, as in manifest.json (e.g. 0.9.0)
+        required: true
+      commit:
+        description: Commit to tag (default the branch it runs on)
+        required: false
+      notes:
+        description: Release notes (Markdown)
+        required: false
 
 permissions:
   contents: write
@@ -14,16 +28,27 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
-      # Checkout leaves a lightweight tag; fetch the tag itself for its message.
-      - run: git fetch --force origin "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+        with:
+          ref: ${{ inputs.commit || github.sha }}
+      # Checkout leaves a pushed tag lightweight; fetch the tag itself for its message.
+      - if: github.event_name == 'push'
+        run: |
+          git fetch --force origin "refs/tags/${VERSION}:refs/tags/${VERSION}"
+          git tag -l --format='%(contents)' "$VERSION" > notes.md
+      - if: github.event_name == 'workflow_dispatch'
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: printf '%s\n' "$NOTES" > notes.md
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: The tag matches manifest.json
-        run: test "$(node -p "require('./manifest.json').version")" = "$GITHUB_REF_NAME"
+      - name: The version matches manifest.json
+        run: test "$(node -p "require('./manifest.json').version")" = "$VERSION"
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -31,5 +56,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.md
-          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css --title "$GITHUB_REF_NAME" --notes-file notes.md
+          gh release create "$VERSION" main.js manifest.json styles.css \
+            --title "$VERSION" --notes-file notes.md --target "$(git rev-parse HEAD)"
