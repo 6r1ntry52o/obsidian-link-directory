@@ -2,7 +2,7 @@ import { Plugin, TFile, WorkspaceLeaf } from "obsidian";
 import { BASES_VIEW_TYPE, LinkDirectoryBasesView } from "./bases";
 import { TreeGraphView, VIEW_TYPE_TREE_GRAPH } from "./graph-view";
 import { t } from "./i18n";
-import { DEFAULT_SETTINGS, LinkDirectorySettingTab, type LinkDirectorySettings } from "./settings";
+import { DEFAULT_SETTINGS, HOPS_ALL, LinkDirectorySettingTab, type LinkDirectorySettings } from "./settings";
 import { LinkDirectoryView, VIEW_TYPE_LINK_DIRECTORY } from "./view";
 
 export default class LinkDirectoryPlugin extends Plugin {
@@ -156,8 +156,13 @@ export default class LinkDirectoryPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = (await this.loadData()) as Partial<LinkDirectorySettings> | null;
-		this.settings = { ...DEFAULT_SETTINGS, ...(data ?? {}) };
+		const data = (await this.loadData()) as (Partial<LinkDirectorySettings> & { graphFocusHops?: number }) | null;
+		const { graphFocusHops, ...saved } = data ?? {};
+		this.settings = { ...DEFAULT_SETTINGS, ...saved };
+		// Up to 0.8 the hops were for focus only, outgoing links only, and 0 meant every hop.
+		if (graphFocusHops !== undefined && saved.graphOutHops === undefined) {
+			this.settings.graphOutHops = graphFocusHops <= 0 ? HOPS_ALL : graphFocusHops;
+		}
 	}
 
 	async saveSettings(): Promise<void> {

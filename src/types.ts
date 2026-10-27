@@ -18,5 +18,7 @@ export interface ChildLink {
 /** Source of link data. Implemented over MetadataCache in the plugin, faked in tests. */
 export interface LinkSource {
 	getChildren(path: string): ChildLink[];
+	/** Notes with a link of any kind to `path` (the caller checks each against its own filters with getChildren). */
+	backlinks(path: string): string[];
 	basename(path: string): string;
 }

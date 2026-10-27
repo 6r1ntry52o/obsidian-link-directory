@@ -106,32 +106,44 @@
 /* Route colours: every shortest route in the full accent, the open note's
    name on an accent-tinted box (mixed towards the background, so lighter in a
    light theme and darker in a dark one).
-   What the open note reaches by links takes the accent turned a third of the
-   way round the colour wheel (Obsidian sets --accent-h/s/l from the accent
-   colour), so it reads apart from the route coming in whatever the accent is. */
+   What the open note reaches by links (outgoing) takes the accent turned a
+   third of the way round the colour wheel, and what reaches it (backlinks) the
+   accent turned a third of the way the other way (Obsidian sets --accent-h/s/l
+   from the accent colour), so the three read apart whatever the accent is.
+   Search hits take Obsidian's yellow, as its search highlights do. */
 .ldg {
 	--ldg-route: var(--interactive-accent);
 	--ldg-marker: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
 	--ldg-link: hsl(calc(var(--accent-h, 254) - 120), var(--accent-s, 80%), var(--accent-l, 68%));
+	--ldg-back: hsl(calc(var(--accent-h, 254) + 120), var(--accent-s, 80%), var(--accent-l, 68%));
 	--ldg-flow: rgba(255, 255, 255, 0.9);
+	--ldg-hit: var(--color-yellow, #e0ac00);
+	--ldg-hit-bg: color-mix(in srgb, var(--ldg-hit) 40%, var(--background-primary));
 }
-/* Each hop further from the open note mixes the link colour further into the
+/* A link around the open note, or a note on it: outgoing, or a backlink. */
+.ldg .is-link {
+	--ldg-base: var(--ldg-link);
+}
+.ldg .is-link.is-back {
+	--ldg-base: var(--ldg-back);
+}
+/* Each hop further from the open note mixes its colour further into the
    background (less saturated, and lighter or darker with the theme) on a
    thinner line. The last shade stands for that many hops and more. */
 .ldg .hop-1 {
-	--ldg-hop: var(--ldg-link);
+	--ldg-hop: var(--ldg-base);
 	--ldg-hop-width: 2.2px;
 }
 .ldg .hop-2 {
-	--ldg-hop: color-mix(in srgb, var(--ldg-link) 75%, var(--background-primary));
+	--ldg-hop: color-mix(in srgb, var(--ldg-base) 75%, var(--background-primary));
 	--ldg-hop-width: 1.8px;
 }
 .ldg .hop-3 {
-	--ldg-hop: color-mix(in srgb, var(--ldg-link) 55%, var(--background-primary));
+	--ldg-hop: color-mix(in srgb, var(--ldg-base) 55%, var(--background-primary));
 	--ldg-hop-width: 1.5px;
 }
 .ldg .hop-4 {
-	--ldg-hop: color-mix(in srgb, var(--ldg-link) 38%, var(--background-primary));
+	--ldg-hop: color-mix(in srgb, var(--ldg-base) 38%, var(--background-primary));
 	--ldg-hop-width: 1.2px;
 }
 
@@ -142,11 +154,41 @@
 	overflow: hidden;
 }
 
-/* The hops chooser sits in the row of header buttons, so it keeps to their height. */
+/* The hops choosers sit in the row of header buttons, so they keep to their
+   height, each after a swatch of the colour it sets. */
 .ldg .ldg-hops {
+	display: inline-flex;
+	align-items: center;
+}
+.ldg .ldg-hops .dropdown {
 	height: auto;
 	padding-block: 2px;
 	font-size: var(--font-ui-smaller);
+}
+.ldg .ldg-hops .ldg-swatch {
+	width: 10px;
+	margin-inline-end: var(--size-2-1);
+}
+
+/* The search box under the header buttons, how many it found beside it. */
+.ldg .ldg-search {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: 0 var(--size-4-3) var(--size-4-1);
+}
+.ldg .ldg-search .search-input-container {
+	flex: 1 1 auto;
+	margin: 0;
+}
+.ldg .ldg-search-count {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+.ldg .ldg-search-count:empty {
+	display: none;
 }
 /* The name length slider, as short as the row of buttons allows. */
 .ldg .ldg-label-chars {
@@ -217,7 +259,7 @@
 .ldg-canvas svg.has-highlight .ldg-edge.is-up {
 	opacity: 0.3;
 }
-/* Links the open note reaches, in any row (those within a row / back up stay dashed). */
+/* Links around the open note, in any row (those within a row / back up stay dashed). */
 .ldg-canvas svg.has-highlight .ldg-edge.is-link {
 	stroke: var(--ldg-hop);
 	stroke-width: var(--ldg-hop-width);
@@ -248,7 +290,7 @@
 .ldg-node.is-root .ldg-dot {
 	fill: var(--text-normal);
 }
-/* A note the open note reaches by links, shaded by hops. */
+/* A note around the open note (it reaches it, or is reached from it), shaded by hops. */
 .ldg-node.is-link .ldg-dot {
 	fill: var(--ldg-hop);
 }
@@ -289,6 +331,7 @@
 .ldg-node.is-route .ldg-dot {
 	fill: var(--ldg-route);
 }
+/* ACTIVE_R in graph-view.ts: the lines within a row and back up end at its edge. */
 .ldg-node.is-active .ldg-dot {
 	r: 8px;
 	fill: var(--ldg-route);
@@ -331,8 +374,23 @@
 	fill: var(--text-muted);
 	font-style: italic;
 }
-/* "Route only": names on the route, the root and the hovered dot. */
-.ldg-canvas svg.is-names-route .ldg-node:not(.is-route):not(.is-root):not(:hover) .ldg-label {
+/* A search hit: a ring round its dot and its name on the highlight (behind
+   the open note's own marker, which it then frames). */
+.ldg-canvas .ldg-node.is-hit .ldg-dot {
+	stroke: var(--ldg-hit);
+	stroke-width: 3px;
+}
+.ldg-hit-box {
+	fill: var(--ldg-hit-bg);
+	stroke: var(--ldg-hit);
+	stroke-width: 1px;
+}
+.ldg-node.is-hit:not(.is-active) .ldg-label {
+	fill: var(--text-normal);
+	stroke: var(--ldg-hit-bg);
+}
+/* "Route only": names on the route, the root, the search hits and the hovered dot. */
+.ldg-canvas svg.is-names-route .ldg-node:not(.is-route):not(.is-root):not(.is-hit):not(:hover) .ldg-label {
 	display: none;
 }
 
@@ -422,6 +480,10 @@
 	background: var(--background-modifier-active-hover);
 	color: var(--text-normal);
 }
+.ldg-orphan.is-hit {
+	background: var(--ldg-hit-bg);
+	color: var(--text-normal);
+}
 .ldg-orphan-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -480,4 +542,7 @@
    hardly shows: the line lights up in its own colour at full strength instead. */
 .ldg-flow-strip.is-tinted {
 	--ldg-flow: var(--ldg-link);
+}
+.ldg-flow-strip.is-tinted.is-back {
+	--ldg-flow: var(--ldg-back);
 }

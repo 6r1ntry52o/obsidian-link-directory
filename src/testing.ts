@@ -4,6 +4,12 @@ import type { ChildLink, LinkSource } from "./types";
 export function fake(adj: Record<string, string[]>): LinkSource {
 	const files = new Set(Object.keys(adj).map((k) => `${k}.md`));
 	return {
+		backlinks(path: string): string[] {
+			const name = path.replace(/\.md$/, "");
+			return Object.keys(adj)
+				.filter((k) => (adj[k] ?? []).includes(name))
+				.map((k) => `${k}.md`);
+		},
 		getChildren(path: string): ChildLink[] {
 			const name = path.replace(/\.md$/, "");
 			return (adj[name] ?? []).map((t, i) => {

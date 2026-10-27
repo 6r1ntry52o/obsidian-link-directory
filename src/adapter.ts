@@ -3,7 +3,24 @@ import type { ChildLink, LinkKind, LinkSource } from "./types";
 
 /** Reads outgoing links straight from MetadataCache, preserving appearance order. */
 export class MetadataLinkSource implements LinkSource {
+	/** Who links to each note, from Obsidian's resolved links, made on first use. */
+	private incoming: Map<string, string[]> | null = null;
+
 	constructor(private readonly app: App) {}
+
+	backlinks(path: string): string[] {
+		if (!this.incoming) {
+			this.incoming = new Map();
+			for (const [from, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+				for (const to of Object.keys(targets)) {
+					const list = this.incoming.get(to);
+					if (list) list.push(from);
+					else this.incoming.set(to, [from]);
+				}
+			}
+		}
+		return this.incoming.get(path) ?? [];
+	}
 
 	basename(path: string): string {
 		const f = this.app.vault.getAbstractFileByPath(path);

@@ -10,12 +10,17 @@ export interface GraphNode {
 	path: string | null;
 	target: string;
 	display: string;
-	/** Shortest link distance from the root. */
+	/**
+	 * Shortest link distance from the root (the layer). For a note outside the
+	 * graph (`outside`) its column instead: one before the notes it links to.
+	 */
 	depth: number;
 	/** Nodes one layer up that link here, in discovery order. `parents[0]` is the BFS tree parent. */
 	parents: string[];
 	/** Note that first linked here (source for creating an unresolved note). */
 	via: string | null;
+	/** A backlink of the open note that the root does not reach (addBacklinks). */
+	outside?: boolean;
 }
 
 export interface GraphEdge {
@@ -29,6 +34,11 @@ export interface LayeredGraph {
 	nodes: Map<string, GraphNode>;
 	/** Node ids per depth, left to right. */
 	layers: string[][];
+	/**
+	 * Notes outside the graph per column, in order (addBacklinks), drawn apart
+	 * from the layers. A column can come before the root's (negative).
+	 */
+	outside: Map<number, string[]>;
 	edges: GraphEdge[];
 	/** The walk stopped at `maxNodes`. */
 	truncated: boolean;
@@ -104,7 +114,7 @@ export function buildLayers(src: LinkSource, rootPath: string, opts: LayerOption
 			edges.push({ from, to, kind });
 		}
 	}
-	return { root: rootPath, nodes, layers, edges, truncated };
+	return { root: rootPath, nodes, layers, outside: new Map(), edges, truncated };
 }
 
 /** Number of crossing pairs among the down edges between adjacent layers. */
@@ -147,7 +157,8 @@ export function orderLayers(g: LayeredGraph, sweeps = 4): void {
 
 	const reorder = (d: number, neighbourLayer: number, neighbours: Map<string, string[]>) => {
 		const layer = g.layers[d] as string[];
-		const scale = ((g.layers[neighbourLayer]?.length ?? 1) - 1) / Math.max(1, layer.length - 1);
+		// An empty neighbour layer (focus can leave one) must not turn the order round.
+		const scale = Math.max(0, (g.layers[neighbourLayer]?.length ?? 1) - 1) / Math.max(1, layer.length - 1);
 		const bary = new Map<string, number>();
 		for (const id of layer) {
 			const ns = neighbours.get(id) ?? [];
@@ -238,18 +249,21 @@ export function groupTones(layer: readonly string[], sub: (id: string) => number
 
 /**
  * The part of the graph around a route: the route's notes and every note one
- * of them links to (down, within a layer or back up), and the notes `from`
- * (the open note, on the route) reaches by up to `hops` links (0 = any
- * number), not going on through the route, as `reachFrom` colours them.
- * Depths stay as in the full graph, so a row still means a link distance from
- * the root; the route reaches every depth up to its end, and a link goes at
- * most one row further, so no row in between goes empty.
+ * of them links to (down, within a layer or back up), the notes `from` (the
+ * open note, on the route) reaches by up to `outHops` links, and the notes
+ * that reach it by up to `backHops` (its backlinks, theirs, …; negative = any
+ * number, 0 = none), neither walk going on through the route, as `around`
+ * colours them. Depths stay as in the full graph, so a row still means a link
+ * distance from the root. The route reaches every depth up to its end and a
+ * link goes at most one row further, but a backlink can sit any number of rows
+ * down: the rows between may then be empty (place() leaves a gap for each).
  */
-export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, hops = 1): LayeredGraph {
+export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, outHops = 1, backHops = 0): LayeredGraph {
 	const keep = new Set<string>([g.root, ...route]);
 	for (const e of g.edges) if (route.has(e.from)) keep.add(e.to);
 	if (from !== undefined && route.has(from)) {
-		for (const [id, h] of reachFrom(g, from, route).nodes) if (hops <= 0 || h <= hops) keep.add(id);
+		for (const id of reachFrom(g, from, route, false, outHops).nodes.keys()) keep.add(id);
+		for (const id of reachFrom(g, from, route, true, backHops).nodes.keys()) keep.add(id);
 	}
 	const nodes = new Map<string, GraphNode>();
 	for (const [id, n] of g.nodes) {
@@ -257,8 +271,107 @@ export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, hops
 	}
 	const layers = g.layers.map((l) => l.filter((id) => keep.has(id)));
 	while (layers.length > 1 && (layers[layers.length - 1] as string[]).length === 0) layers.pop();
+	const outside = new Map([...g.outside].map(([c, ids]) => [c, ids.filter((id) => keep.has(id))] as const));
 	const edges = g.edges.filter((e) => keep.has(e.from) && keep.has(e.to));
-	return { root: g.root, nodes, layers, edges, truncated: g.truncated };
+	return { root: g.root, nodes, layers, outside, edges, truncated: g.truncated };
+}
+
+/**
+ * Adds the notes the root does not reach that link to `id` (the open note),
+ * the notes that link to those, and so on, up to `hops` links back (negative =
+ * any number, 0 = none), the walk not going on through a `stop` note (the
+ * route), as `around` walks back inside the graph. `full` is the whole graph
+ * the root reaches (`g` itself, or what `g` was focused from): a note in it
+ * keeps its own place, and is left out when `g` does not show it.
+ *
+ * A note from outside sits one column before the nearest of the notes it links
+ * to on the way back (so a column can come before the root's), in the order of
+ * those notes, then by name. Only the links on a shortest way back are added,
+ * so they all run forward, one column or more. Returns a new graph.
+ */
+export function addBacklinks(
+	g: LayeredGraph,
+	full: LayeredGraph,
+	src: LinkSource,
+	id: string,
+	stop: ReadonlySet<string>,
+	hops: number,
+	opts: LayerOptions,
+): LayeredGraph {
+	const nodes = new Map(g.nodes);
+	const edges = [...g.edges];
+	let truncated = g.truncated;
+	if (!g.nodes.has(id)) return { ...g, nodes, edges };
+
+	const linked = new Map<string, Set<string>>();
+	const linksTo = (from: string, to: string) => {
+		let set = linked.get(from);
+		if (!set) {
+			set = new Set(filterLinks(src.getChildren(from), opts).map(linkKey));
+			linked.set(from, set);
+		}
+		return set.has(to);
+	};
+	// Walk back hop by hop; for each note from outside, the notes a hop nearer it links to.
+	const hopOf = new Map<string, number>([[id, 0]]);
+	const found: string[] = [];
+	const targets = new Map<string, string[]>();
+	for (let frontier = [id], h = 1; frontier.length > 0 && (hops < 0 || h <= hops); h++) {
+		const next: string[] = [];
+		for (const to of frontier) {
+			for (const from of src.backlinks(to)) {
+				if (from === to || !linksTo(from, to)) continue;
+				const inside = full.nodes.has(from);
+				const seen = hopOf.get(from);
+				if (seen === undefined) {
+					if (!inside && found.length >= opts.maxNodes) {
+						truncated = true;
+						continue;
+					}
+					hopOf.set(from, h);
+					if (stop.has(from) || (inside && !g.nodes.has(from))) continue;
+					next.push(from);
+					if (!inside) found.push(from);
+				} else if (seen !== h) continue;
+				if (!inside) push(targets, from, to);
+			}
+		}
+		frontier = next;
+	}
+
+	// Columns in the order found (a note's targets, a hop nearer, already have theirs).
+	for (const from of found) {
+		const ts = targets.get(from) ?? [];
+		const depth = Math.min(...ts.map((t) => (nodes.get(t) as GraphNode).depth)) - 1;
+		const name = src.basename(from);
+		nodes.set(from, { id: from, path: from, target: name, display: name, depth, parents: [], via: null, outside: true });
+		for (const to of ts) edges.push({ from, to, kind: "down" });
+	}
+	// Each column follows the one after it: by the first place among the notes it links to there.
+	const byColumn = new Map<number, string[]>();
+	for (const from of found) {
+		const c = (nodes.get(from) as GraphNode).depth;
+		byColumn.set(c, [...(byColumn.get(c) ?? []), from]);
+	}
+	const columns = [...byColumn.keys()].sort((a, b) => b - a);
+	const outside = new Map<number, string[]>();
+	const pos = new Map<string, number>();
+	for (const layer of g.layers) layer.forEach((n, i) => pos.set(n, i));
+	for (const c of columns) {
+		const offset = g.layers[c + 1]?.length ?? 0;
+		const key = (n: string) =>
+			Math.min(
+				...(targets.get(n) ?? [])
+					.filter((t) => (nodes.get(t) as GraphNode).depth === c + 1)
+					.map((t) => (nodes.get(t)?.outside ? offset : 0) + (pos.get(t) ?? 0)),
+			);
+		const ids = [...(byColumn.get(c) ?? [])].sort(
+			(a, b) => key(a) - key(b) || (nodes.get(a) as GraphNode).display.localeCompare((nodes.get(b) as GraphNode).display),
+		);
+		ids.forEach((n, i) => pos.set(n, i));
+		outside.set(c, ids);
+	}
+	return { root: g.root, nodes, layers: g.layers, outside, edges, truncated };
 }
 
 /** down = rows top to bottom; right = columns left to right. */
@@ -284,14 +397,47 @@ export interface PlaceOptions {
 	gap: number;
 	/** Wrap a layer longer than this along its row (0 = never). */
 	maxLength: number;
+	/** Cross-axis gap between the layers and the notes outside the graph. */
+	blockGap?: number;
 }
 
 export interface Placement {
 	points: Map<string, Point>;
-	/** Main-axis coordinate of each layer's first sub-row (where lines come in). */
+	/** Main-axis coordinate of each column's first sub-row (where lines come in), from column `first` on. */
 	starts: number[];
-	/** Main-axis coordinate of each layer's far side, where its lines leave for the next layer. */
+	/** Main-axis coordinate of each column's far side, where its lines leave for the next. */
 	ports: number[];
+	/** The column of starts[0] and ports[0]: the root's (0), or one before it for notes outside the graph. */
+	first: number;
+}
+
+/** A row folded into sub-rows to fit `maxLength`, column-major, before it is placed. */
+interface Fold {
+	ids: string[];
+	ws: number[];
+	rows: number;
+	colW: number[];
+	width: number;
+	stagger: number;
+	extent: number;
+}
+
+function foldRow(ids: string[], slot: (id: string) => number, o: PlaceOptions): Fold {
+	const ws = ids.map(slot);
+	const fold = (rows: number): Fold => {
+		const colW: number[] = [];
+		for (let c = 0; c < Math.ceil(ids.length / rows); c++) colW.push(Math.max(...ws.slice(c * rows, (c + 1) * rows)));
+		const width = colW.reduce((s, w) => s + w, 0) + o.gap * (colW.length - 1);
+		const stagger = rows > 1 ? Math.min(...colW) / rows : 0;
+		return { ids, ws, rows, colW, width, stagger, extent: width + stagger * (rows - 1) };
+	};
+	if (ids.length === 0) return { ids, ws, rows: 0, colW: [], width: 0, stagger: 0, extent: 0 };
+	// Start from the even split, then add rows until the folded row really
+	// fits (columns are as wide as their widest node, so it can overshoot).
+	const total = ws.reduce((s, w) => s + w, 0) + o.gap * (ids.length - 1);
+	let f = fold(o.maxLength > 0 ? Math.min(ids.length, Math.max(1, Math.ceil(total / o.maxLength))) : 1);
+	while (o.maxLength > 0 && f.extent > o.maxLength && f.rows < ids.length) f = fold(f.rows + 1);
+	return f;
 }
 
 /**
@@ -305,6 +451,13 @@ export interface Placement {
  * left-to-right order is kept, so a parent's children stay in one block.
  * Sub-rows are staggered so that lines into a lower sub-row pass between the
  * nodes above it.
+ *
+ * The notes outside the graph (g.outside) go in the same columns, as a block
+ * of their own further along the cross axis, clear of every layer (below the
+ * graph growing right, beside it growing down), each column's part centred on
+ * one line; a column before the root's comes first. A column is as deep as
+ * the deeper of its two parts; an empty one is only a gap, so the columns
+ * after it still read as further away.
  */
 export function place(
 	g: LayeredGraph,
@@ -315,51 +468,52 @@ export function place(
 	const points = new Map<string, Point>();
 	const starts: number[] = [];
 	const ports: number[] = [];
-	let v0 = 0;
-	for (const layer of g.layers) {
-		const ws = layer.map(slot);
-		const fold = (rows: number) => {
-			const colW: number[] = [];
-			for (let c = 0; c < Math.ceil(layer.length / rows); c++) colW.push(Math.max(...ws.slice(c * rows, (c + 1) * rows)));
-			const width = colW.reduce((s, w) => s + w, 0) + o.gap * (colW.length - 1);
-			const stagger = rows > 1 ? Math.min(...colW) / rows : 0;
-			return { rows, colW, width, stagger, extent: width + stagger * (rows - 1) };
-		};
-		// Start from the even split, then add rows until the folded row really
-		// fits (columns are as wide as their widest node, so it can overshoot).
-		const total = ws.reduce((s, w) => s + w, 0) + o.gap * (layer.length - 1);
-		let f = fold(o.maxLength > 0 ? Math.min(layer.length, Math.max(1, Math.ceil(total / o.maxLength))) : 1);
-		while (o.maxLength > 0 && f.extent > o.maxLength && f.rows < layer.length) f = fold(f.rows + 1);
-		const { rows, colW, width, stagger } = f;
+	const outs = [...g.outside.keys()].filter((c) => (g.outside.get(c) as string[]).length > 0);
+	const first = Math.min(0, ...outs);
+	const last = Math.max(g.layers.length - 1, ...outs);
+	const columns: { main: Fold; out: Fold }[] = [];
+	for (let c = first; c <= last; c++) {
+		columns.push({ main: foldRow(g.layers[c] ?? [], slot, o), out: foldRow(g.outside.get(c) ?? [], slot, o) });
+	}
+	// The outside block's centre line: past the widest layer, then half the widest outside part.
+	const half = (f: Fold) => f.extent / 2;
+	const centre = Math.max(0, ...columns.map((c) => half(c.main))) + (o.blockGap ?? 0) + Math.max(0, ...columns.map((c) => half(c.out)));
 
+	// Places a part from v0 centred on `mid`, returning how deep it reaches.
+	const lay = (f: Fold, v0: number, mid: number): number => {
+		if (f.rows === 0) return 0;
 		// Each sub-row is as deep as its deepest node; the next starts after it.
-		const subDepth = new Array<number>(rows).fill(0);
-		layer.forEach((id, i) => {
-			const s = i % rows;
+		const subDepth = new Array<number>(f.rows).fill(0);
+		f.ids.forEach((id, i) => {
+			const s = i % f.rows;
 			subDepth[s] = Math.max(subDepth[s] as number, depth(id));
 		});
 		const subV: number[] = [v0];
-		for (let s = 1; s < rows; s++) subV.push((subV[s - 1] as number) + (subDepth[s - 1] as number) + o.subGap);
-
-		let u = -width / 2 - (stagger * (rows - 1)) / 2;
-		colW.forEach((cw, c) => {
-			for (let s = 0; s < rows; s++) {
-				const i = c * rows + s;
-				const id = layer[i];
+		for (let s = 1; s < f.rows; s++) subV.push((subV[s - 1] as number) + (subDepth[s - 1] as number) + o.subGap);
+		let u = mid - f.width / 2 - (f.stagger * (f.rows - 1)) / 2;
+		f.colW.forEach((cw, c) => {
+			for (let s = 0; s < f.rows; s++) {
+				const i = c * f.rows + s;
+				const id = f.ids[i];
 				if (id === undefined) break;
-				const cu = u + cw / 2 + stagger * s;
+				const cu = u + cw / 2 + f.stagger * s;
 				const cv = subV[s] as number;
-				const w = ws[i] as number;
+				const w = f.ws[i] as number;
 				points.set(id, o.direction === "down" ? { id, x: cu, y: cv, w, sub: s } : { id, x: cv, y: cu, w, sub: s });
 			}
 			u += cw + o.gap;
 		});
-		const port = (subV[rows - 1] as number) + (subDepth[rows - 1] as number);
+		return (subV[f.rows - 1] as number) + (subDepth[f.rows - 1] as number) - v0;
+	};
+
+	let v0 = 0;
+	for (const { main, out } of columns) {
+		const reach = Math.max(lay(main, v0, 0), lay(out, v0, centre));
 		starts.push(v0);
-		ports.push(port);
-		v0 = port + o.layerGap;
+		ports.push(v0 + reach);
+		v0 += main.rows + out.rows === 0 ? o.layerGap : reach + o.layerGap;
 	}
-	return { points, starts, ports };
+	return { points, starts, ports, first };
 }
 
 export function edgeKey(from: string, to: string): string {
@@ -403,37 +557,80 @@ export interface Reach {
 
 /**
  * Everything `id` reaches by following links (down, within a row or back up),
- * in hops from `id`. A link into a note already reached at the same hop is
- * kept, so the lines merge as in the layers. The walk goes into a `stop` note
- * but not on from it: stopping at the route to `id` keeps a link back to the
- * root from pulling in the whole graph. Stop notes keep their own colour, so
- * only the links into them are returned.
+ * in hops from `id`, up to `max` hops (negative = any number, 0 = none). With
+ * `back` the links are followed the other way: the notes that link to `id`,
+ * the notes that link to those, and so on (its backlinks), the links keeping
+ * their own direction (edgeKey from → to). A link into a note already reached
+ * at the same hop is kept, so the lines merge as in the layers. The walk goes
+ * into a `stop` note but not on from it: stopping at the route to `id` keeps a
+ * link back to the root from pulling in the whole graph. Stop notes keep their
+ * own colour, so only the links between them and the walk are returned.
  */
-export function reachFrom(g: LayeredGraph, id: string, stop: ReadonlySet<string> = new Set()): Reach {
+export function reachFrom(g: LayeredGraph, id: string, stop: ReadonlySet<string> = new Set(), back = false, max = -1): Reach {
 	const nodes = new Map<string, number>();
 	const edges = new Map<string, number>();
 	if (!g.nodes.has(id)) return { nodes, edges };
-	const out = new Map<string, string[]>();
-	for (const e of g.edges) push(out, e.from, e.to);
+	const next = new Map<string, string[]>();
+	for (const e of g.edges) {
+		if (back) push(next, e.to, e.from);
+		else push(next, e.from, e.to);
+	}
 	const hops = new Map<string, number>([[id, 0]]);
-	for (let frontier = [id], h = 1; frontier.length > 0; h++) {
-		const next: string[] = [];
+	for (let frontier = [id], h = 1; frontier.length > 0 && (max < 0 || h <= max); h++) {
+		const found: string[] = [];
 		for (const from of frontier) {
-			for (const to of out.get(from) ?? []) {
+			for (const to of next.get(from) ?? []) {
 				const seen = hops.get(to);
 				if (seen === undefined) {
 					hops.set(to, h);
 					if (!stop.has(to)) {
 						nodes.set(to, h);
-						next.push(to);
+						found.push(to);
 					}
 				} else if (seen !== h) continue;
-				edges.set(edgeKey(from, to), h);
+				edges.set(back ? edgeKey(to, from) : edgeKey(from, to), h);
 			}
 		}
-		frontier = next;
+		frontier = found;
 	}
 	return { nodes, edges };
+}
+
+export interface Around {
+	/** What the open note reaches by its links (outgoing links, theirs, …). */
+	out: Reach;
+	/** What reaches the open note (its backlinks, theirs, …). */
+	back: Reach;
+}
+
+/**
+ * The open note's surroundings, as coloured: what `id` reaches by links up to
+ * `outHops` and what reaches it up to `backHops` (negative = any number, 0 =
+ * none), neither walk going on through the route. A note or link both walks
+ * find (a cycle through the open note) goes with the nearer of the two, the
+ * outgoing one on a tie, so it has one colour and one number. The route's own
+ * links stay the route's: the notes linking down to `id` are its backlinks
+ * too, but they are on the route.
+ */
+export function around(g: LayeredGraph, id: string, route: Highlight, outHops: number, backHops: number): Around {
+	const out = reachFrom(g, id, route.nodes, false, outHops);
+	const back = reachFrom(g, id, route.nodes, true, backHops);
+	for (const [o, b] of [
+		[out.nodes, back.nodes],
+		[out.edges, back.edges],
+	] as const) {
+		for (const [key, hb] of b) {
+			const ho = o.get(key);
+			if (ho === undefined) continue;
+			if (ho <= hb) b.delete(key);
+			else o.delete(key);
+		}
+	}
+	for (const key of route.edges) {
+		out.edges.delete(key);
+		back.edges.delete(key);
+	}
+	return { out, back };
 }
 
 function positions(g: LayeredGraph): Map<string, number> {

@@ -36,8 +36,10 @@ export interface LinkDirectorySettings {
 	graphMaxLength: number;
 	/** Tree graph: show only the route to the open note and the notes linked from it. */
 	graphFocus: boolean;
-	/** Tree graph, focus: also the notes the open note reaches by up to this many links (0 = any number). */
-	graphFocusHops: number;
+	/** Tree graph, focus: show and colour what the open note reaches by up to this many links (HOPS_ALL = any number, 0 = none); unfocused, every hop is coloured. */
+	graphOutHops: number;
+	/** Tree graph, focus or not: show and colour what reaches the open note by up to this many links (its backlinks), from outside the graph too. */
+	graphBackHops: number;
 	/** Tree graph: run a short light along the coloured lines, base to tip. */
 	graphFlow: boolean;
 }
@@ -64,7 +66,8 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	graphTheme: "auto",
 	graphMaxLength: 1200,
 	graphFocus: false,
-	graphFocusHops: 1,
+	graphOutHops: 1,
+	graphBackHops: 1,
 	graphFlow: true,
 };
 
@@ -72,11 +75,14 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 export const LABEL_CHARS_MIN = 4;
 export const LABEL_CHARS_MAX = 60;
 
-/** The hops offered for focus, 0 (every hop) last. */
-export const FOCUS_HOPS = [1, 2, 3, 4, 5, 0];
+/** Hops from the open note: any number. */
+export const HOPS_ALL = -1;
+/** The hops offered: none, 1 to 5, then every hop. */
+export const HOP_CHOICES = [0, 1, 2, 3, 4, 5, HOPS_ALL];
 
 export function hopsLabel(n: number): string {
-	if (n <= 0) return t("graphHopsAll");
+	if (n < 0) return t("graphHopsAll");
+	if (n === 0) return t("graphHopsNone");
 	return t(n === 1 ? "graphHop" : "graphHops").replace("{n}", String(n));
 }
 
@@ -324,6 +330,20 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 					}),
 			);
 
+		const hops = (name: string, desc: string, get: () => number, set: (n: number) => void) =>
+			new Setting(containerEl)
+				.setName(name)
+				.setDesc(desc)
+				.addDropdown((d) => {
+					// One by one: an object of options would sort the numbers ("-1", every hop, first).
+					for (const n of HOP_CHOICES) d.addOption(String(n), hopsLabel(n));
+					d.setValue(String(get())).onChange((v) => {
+						set(Number(v));
+						save();
+					});
+				});
+		hops(t("setGraphBackHops"), t("setGraphBackHopsDesc"), () => s.graphBackHops, (n) => (s.graphBackHops = n));
+
 		new Setting(containerEl)
 			.setName(t("setGraphFocus"))
 			.setDesc(t("setGraphFocusDesc"))
@@ -335,19 +355,8 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 				}),
 			);
 
-		if (s.graphFocus) {
-			new Setting(containerEl)
-				.setName(t("setGraphFocusHops"))
-				.setDesc(t("setGraphFocusHopsDesc"))
-				.addDropdown((d) => {
-					// One by one: an object of options would put "0" (every hop) first.
-					for (const n of FOCUS_HOPS) d.addOption(String(n), hopsLabel(n));
-					d.setValue(String(s.graphFocusHops)).onChange((v) => {
-						s.graphFocusHops = Number(v);
-						save();
-					});
-				});
-		}
+		// The outgoing links' hops count only while focused: unfocused, every hop is coloured.
+		if (s.graphFocus) hops(t("setGraphOutHops"), t("setGraphOutHopsDesc"), () => s.graphOutHops, (n) => (s.graphOutHops = n));
 
 		new Setting(containerEl)
 			.setName(t("setGraphFlow"))
