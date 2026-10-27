@@ -478,10 +478,16 @@ describe("addBacklinks", () => {
 		expect(b.nodes.has("Lost.md")).toBe(false);
 	});
 
-	it("adds only the links on a shortest way back, all running forward", () => {
-		// X links to O (1 hop) and to Y (Y links to O: a 2-hop way), so only X → O
+	it("places a note by its shortest way back, and colours only that way", () => {
+		// X links to O (1 hop) and to Y (Y links to O: a 2-hop way): X sits before O, X → Y is only tied
 		const one = add({ R: ["A"], A: ["O"], O: ["P"], P: ["Y"], Y: ["O"], X: ["O", "Y"] }, "O.md").b;
-		expect(kinds(one).filter((k) => k.startsWith("X>"))).toEqual(["X>O:down"]);
+		expect(one.nodes.get("X.md")?.depth).toBe(1);
+		expect(kinds(one).filter((k) => k.startsWith("X>"))).toEqual(["X>O:down", "X>Y:down"]);
+		const hl = pathToRoot(one, "O.md");
+		if (!hl) throw new Error("no route");
+		const { back } = around(one, "O.md", hl, -1, -1);
+		expect(back.edges.has(edgeKey("X.md", "O.md"))).toBe(true);
+		expect(back.edges.has(edgeKey("X.md", "Y.md"))).toBe(false);
 		// X is two hops back through Y1 (row 3) and Y2 (row 2): it sits before the nearer column
 		const adj = { R: ["A", "B"], A: ["O"], B: ["Y2"], Y2: ["O"], O: ["P"], P: ["Y1"], Y1: ["O"], X: ["Y1", "Y2"] };
 		const two = add(adj, "O.md").b;
@@ -502,6 +508,19 @@ describe("addBacklinks", () => {
 		expect(columns(b)).toEqual({ 0: ["Out1"], [-1]: ["Lost", "Out2"] });
 		expect(kinds(b).slice(g.edges.length).sort()).toEqual(["Lost>R:down", "Out1>A:down", "Out2>Out1:down"]);
 		expect(columns(addBacklinks(g, g, src, route, route, 1, opts))).toEqual({ 0: ["Out1"], [-1]: ["Lost"] });
+	});
+
+	it("ties a note from outside to every note drawn it links to, forward, within a column or back", () => {
+		// open O (R → A → O); X links to O, then to P (a row further), A (its column) and R (before it);
+		// Y links to O and to X (beside it); Lost (the root's) and the unresolved link are not drawn
+		const adj = { R: ["A", "B"], A: ["O"], B: ["P"], O: [], P: [], X: ["O", "P", "A", "R", "Lost", "?Nowhere"], Y: ["O", "X"], Lost: ["R"] };
+		const { g, b } = add(adj, "O.md");
+		expect(columns(b)).toEqual({ 1: ["X", "Y"] });
+		expect(kinds(b).slice(g.edges.length)).toEqual(["X>O:down", "Y>O:down", "X>P:down", "X>A:same", "X>R:up", "Y>X:same"]);
+		// with focus, only to the notes it shows: P (under B, off the route) is hidden
+		const f = focusOn(g, pathToRoot(g, "O.md")?.nodes ?? new Set());
+		const bf = addBacklinks(f, g, fake(adj), "O.md", pathToRoot(g, "O.md")?.nodes ?? new Set(), -1, opts);
+		expect(kinds(bf).filter((k) => k.startsWith("X>"))).toEqual(["X>O:down", "X>A:same", "X>R:up"]);
 	});
 
 	it("stops at the search limit", () => {
