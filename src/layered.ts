@@ -288,14 +288,17 @@ export function focusOn(
  * every note on the route), the notes that link to those, and so on, up to
  * `hops` links back from the nearest (negative = any number, 0 = none), the
  * walk not going on through a `stop` note (the route), as `around` walks back
- * inside the graph. `full` is the whole graph
- * the root reaches (`g` itself, or what `g` was focused from): a note in it
- * keeps its own place, and is left out when `g` does not show it.
+ * inside the graph. `full` is the whole graph the root reaches (`g` itself, or
+ * what `g` was focused from): a note in it keeps its own place, and is left
+ * out when `g` does not show it.
  *
  * A note from outside sits one column before the nearest of the notes it links
  * to on the way back (so a column can come before the root's), in the order of
- * those notes, then by name. Only the links on a shortest way back are added,
- * so they all run forward, one column or more. Returns a new graph.
+ * those notes, then by name. The links on a shortest way back come first, all
+ * running forward, one column or more; then every other link of a note from
+ * outside to a note `g` shows or that is added, so each is tied to all it
+ * links to, forward, within a column or back (`around` colours only the
+ * former). Returns a new graph.
  */
 export function addBacklinks(
 	g: LayeredGraph,
@@ -312,15 +315,17 @@ export function addBacklinks(
 	const starts = idsIn(g, into);
 	if (starts.length === 0) return { ...g, nodes, edges };
 
+	// What a note links to, in order (each note's links read once).
 	const linked = new Map<string, Set<string>>();
-	const linksTo = (from: string, to: string) => {
+	const linksOf = (from: string) => {
 		let set = linked.get(from);
 		if (!set) {
 			set = new Set(filterLinks(src.getChildren(from), opts).map(linkKey));
 			linked.set(from, set);
 		}
-		return set.has(to);
+		return set;
 	};
+	const linksTo = (from: string, to: string) => linksOf(from).has(to);
 	// Walk back hop by hop; for each note from outside, the notes a hop nearer it links to.
 	const hopOf = new Map<string, number>(starts.map((id) => [id, 0]));
 	const found: string[] = [];
@@ -355,6 +360,17 @@ export function addBacklinks(
 		const name = src.basename(from);
 		nodes.set(from, { id: from, path: from, target: name, display: name, depth, parents: [], via: null, outside: true });
 		for (const to of ts) edges.push({ from, to, kind: "down" });
+	}
+	// Then each one's other links to a note drawn, by where it sits: a column or more on, the same, or before.
+	const drawn = new Set(edges.map((e) => edgeKey(e.from, e.to)));
+	for (const from of found) {
+		const column = (nodes.get(from) as GraphNode).depth;
+		for (const to of linksOf(from)) {
+			const target = nodes.get(to);
+			if (!target || to === from || drawn.has(edgeKey(from, to))) continue;
+			drawn.add(edgeKey(from, to));
+			edges.push({ from, to, kind: target.depth > column ? "down" : target.depth === column ? "same" : "up" });
+		}
 	}
 	// Each column follows the one after it: by the first place among the notes it links to there.
 	const byColumn = new Map<number, string[]>();
