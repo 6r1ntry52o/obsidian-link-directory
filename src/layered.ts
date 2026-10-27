@@ -147,7 +147,8 @@ export function orderLayers(g: LayeredGraph, sweeps = 4): void {
 
 	const reorder = (d: number, neighbourLayer: number, neighbours: Map<string, string[]>) => {
 		const layer = g.layers[d] as string[];
-		const scale = ((g.layers[neighbourLayer]?.length ?? 1) - 1) / Math.max(1, layer.length - 1);
+		// An empty neighbour layer (focus can leave one) must not turn the order round.
+		const scale = Math.max(0, (g.layers[neighbourLayer]?.length ?? 1) - 1) / Math.max(1, layer.length - 1);
 		const bary = new Map<string, number>();
 		for (const id of layer) {
 			const ns = neighbours.get(id) ?? [];
@@ -238,18 +239,21 @@ export function groupTones(layer: readonly string[], sub: (id: string) => number
 
 /**
  * The part of the graph around a route: the route's notes and every note one
- * of them links to (down, within a layer or back up), and the notes `from`
- * (the open note, on the route) reaches by up to `hops` links (0 = any
- * number), not going on through the route, as `reachFrom` colours them.
- * Depths stay as in the full graph, so a row still means a link distance from
- * the root; the route reaches every depth up to its end, and a link goes at
- * most one row further, so no row in between goes empty.
+ * of them links to (down, within a layer or back up), the notes `from` (the
+ * open note, on the route) reaches by up to `outHops` links, and the notes
+ * that reach it by up to `backHops` (its backlinks, theirs, …; negative = any
+ * number, 0 = none), neither walk going on through the route, as `around`
+ * colours them. Depths stay as in the full graph, so a row still means a link
+ * distance from the root. The route reaches every depth up to its end and a
+ * link goes at most one row further, but a backlink can sit any number of rows
+ * down: the rows between may then be empty (place() leaves a gap for each).
  */
-export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, hops = 1): LayeredGraph {
+export function focusOn(g: LayeredGraph, route: Set<string>, from?: string, outHops = 1, backHops = 0): LayeredGraph {
 	const keep = new Set<string>([g.root, ...route]);
 	for (const e of g.edges) if (route.has(e.from)) keep.add(e.to);
 	if (from !== undefined && route.has(from)) {
-		for (const [id, h] of reachFrom(g, from, route).nodes) if (hops <= 0 || h <= hops) keep.add(id);
+		for (const id of reachFrom(g, from, route, false, outHops).nodes.keys()) keep.add(id);
+		for (const id of reachFrom(g, from, route, true, backHops).nodes.keys()) keep.add(id);
 	}
 	const nodes = new Map<string, GraphNode>();
 	for (const [id, n] of g.nodes) {
@@ -317,6 +321,14 @@ export function place(
 	const ports: number[] = [];
 	let v0 = 0;
 	for (const layer of g.layers) {
+		// An empty layer (a focused graph can leave one between backlinks and the
+		// rest) is only a gap, so the layers after it still read as further away.
+		if (layer.length === 0) {
+			starts.push(v0);
+			ports.push(v0);
+			v0 += o.layerGap;
+			continue;
+		}
 		const ws = layer.map(slot);
 		const fold = (rows: number) => {
 			const colW: number[] = [];
@@ -403,37 +415,80 @@ export interface Reach {
 
 /**
  * Everything `id` reaches by following links (down, within a row or back up),
- * in hops from `id`. A link into a note already reached at the same hop is
- * kept, so the lines merge as in the layers. The walk goes into a `stop` note
- * but not on from it: stopping at the route to `id` keeps a link back to the
- * root from pulling in the whole graph. Stop notes keep their own colour, so
- * only the links into them are returned.
+ * in hops from `id`, up to `max` hops (negative = any number, 0 = none). With
+ * `back` the links are followed the other way: the notes that link to `id`,
+ * the notes that link to those, and so on (its backlinks), the links keeping
+ * their own direction (edgeKey from → to). A link into a note already reached
+ * at the same hop is kept, so the lines merge as in the layers. The walk goes
+ * into a `stop` note but not on from it: stopping at the route to `id` keeps a
+ * link back to the root from pulling in the whole graph. Stop notes keep their
+ * own colour, so only the links between them and the walk are returned.
  */
-export function reachFrom(g: LayeredGraph, id: string, stop: ReadonlySet<string> = new Set()): Reach {
+export function reachFrom(g: LayeredGraph, id: string, stop: ReadonlySet<string> = new Set(), back = false, max = -1): Reach {
 	const nodes = new Map<string, number>();
 	const edges = new Map<string, number>();
 	if (!g.nodes.has(id)) return { nodes, edges };
-	const out = new Map<string, string[]>();
-	for (const e of g.edges) push(out, e.from, e.to);
+	const next = new Map<string, string[]>();
+	for (const e of g.edges) {
+		if (back) push(next, e.to, e.from);
+		else push(next, e.from, e.to);
+	}
 	const hops = new Map<string, number>([[id, 0]]);
-	for (let frontier = [id], h = 1; frontier.length > 0; h++) {
-		const next: string[] = [];
+	for (let frontier = [id], h = 1; frontier.length > 0 && (max < 0 || h <= max); h++) {
+		const found: string[] = [];
 		for (const from of frontier) {
-			for (const to of out.get(from) ?? []) {
+			for (const to of next.get(from) ?? []) {
 				const seen = hops.get(to);
 				if (seen === undefined) {
 					hops.set(to, h);
 					if (!stop.has(to)) {
 						nodes.set(to, h);
-						next.push(to);
+						found.push(to);
 					}
 				} else if (seen !== h) continue;
-				edges.set(edgeKey(from, to), h);
+				edges.set(back ? edgeKey(to, from) : edgeKey(from, to), h);
 			}
 		}
-		frontier = next;
+		frontier = found;
 	}
 	return { nodes, edges };
+}
+
+export interface Around {
+	/** What the open note reaches by its links (outgoing links, theirs, …). */
+	out: Reach;
+	/** What reaches the open note (its backlinks, theirs, …). */
+	back: Reach;
+}
+
+/**
+ * The open note's surroundings, as coloured: what `id` reaches by links up to
+ * `outHops` and what reaches it up to `backHops` (negative = any number, 0 =
+ * none), neither walk going on through the route. A note or link both walks
+ * find (a cycle through the open note) goes with the nearer of the two, the
+ * outgoing one on a tie, so it has one colour and one number. The route's own
+ * links stay the route's: the notes linking down to `id` are its backlinks
+ * too, but they are on the route.
+ */
+export function around(g: LayeredGraph, id: string, route: Highlight, outHops: number, backHops: number): Around {
+	const out = reachFrom(g, id, route.nodes, false, outHops);
+	const back = reachFrom(g, id, route.nodes, true, backHops);
+	for (const [o, b] of [
+		[out.nodes, back.nodes],
+		[out.edges, back.edges],
+	] as const) {
+		for (const [key, hb] of b) {
+			const ho = o.get(key);
+			if (ho === undefined) continue;
+			if (ho <= hb) b.delete(key);
+			else o.delete(key);
+		}
+	}
+	for (const key of route.edges) {
+		out.edges.delete(key);
+		back.edges.delete(key);
+	}
+	return { out, back };
 }
 
 function positions(g: LayeredGraph): Map<string, number> {

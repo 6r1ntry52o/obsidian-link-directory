@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_TREE_OPTIONS } from "./graph";
 import {
+	around,
 	buildLayers,
 	countCrossings,
 	edgeKey,
@@ -90,6 +91,18 @@ describe("orderLayers", () => {
 		orderLayers(g);
 		expect(countCrossings(g)).toBe(0);
 		expect(names(g)[2]).toEqual(["Y", "X"]);
+	});
+
+	it("is not turned round by an empty layer", () => {
+		// focused on Y with one hop of backlinks: M (row 3) is hidden, E1 and E2 (row 4) link back to Y
+		const adj = { R: ["A", "B"], A: ["X", "Y"], B: ["X"], X: ["M"], Y: [], M: ["E1", "E2"], E1: ["Y"], E2: ["Y"] };
+		const g = buildLayers(fake(adj), "R.md", opts);
+		const f = focusOn(g, pathToRoot(g, "Y.md")?.nodes ?? new Set(), "Y.md", 1, 1);
+		expect(names(f)).toEqual([["R"], ["A", "B"], ["X", "Y"], [], ["E1", "E2"]]);
+		expect(countCrossings(f)).toBe(1);
+		orderLayers(f);
+		expect(countCrossings(f)).toBe(0);
+		expect(names(f)[4]).toEqual(["E1", "E2"]);
 	});
 
 	it("keeps layer 1 in the root's link order", () => {
@@ -234,6 +247,70 @@ describe("reachFrom", () => {
 		expect(reachFrom(g, "A.md").edges.size).toBe(0);
 		expect(reachFrom(g, "Lost.md").edges.size).toBe(0);
 	});
+
+	it("stops after `max` hops (0 = none)", () => {
+		const g = buildLayers(fake({ R: ["A"], A: ["B"], B: ["C"], C: ["D"], D: [] }), "R.md", opts);
+		expect(hopsOf(reachFrom(g, "A.md", new Set(), false, 2).nodes)).toEqual({ B: 1, C: 2 });
+		expect(hopsOf(reachFrom(g, "A.md", new Set(), false, 2).edges)).toEqual({ "A\u0000B": 1, "B\u0000C": 2 });
+		expect(reachFrom(g, "A.md", new Set(), false, 0).edges.size).toBe(0);
+	});
+
+	it("walks backlinks the other way, the links keeping their direction", () => {
+		// route R → A → O ; X links to O within its row, Y and B link to X, R to B
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["O"], B: ["X", "Y"], X: ["O"], Y: ["X"], O: [] }), "R.md", opts);
+		const route = pathToRoot(g, "O.md")?.nodes ?? new Set<string>();
+		const r = reachFrom(g, "O.md", route, true);
+		expect(hopsOf(r.nodes)).toEqual({ X: 1, B: 2, Y: 2 });
+		// into the route (A, R) but not on from it: A → O is a backlink too, R → B one three hops away
+		expect(hopsOf(r.edges)).toEqual({ "A\u0000O": 1, "X\u0000O": 1, "B\u0000X": 2, "Y\u0000X": 2, "R\u0000B": 3 });
+		expect(hopsOf(reachFrom(g, "O.md", route, true, 1).nodes)).toEqual({ X: 1 });
+	});
+});
+
+describe("around", () => {
+	const hopsOf = (m: Map<string, number>) => Object.fromEntries([...m].map(([k, v]) => [k.replace(/\.md/g, ""), v]));
+
+	it("leaves the route's links to the route", () => {
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["O"], B: ["X"], X: ["O"], O: [] }), "R.md", opts);
+		const hl = pathToRoot(g, "O.md");
+		if (!hl) throw new Error("no route");
+		const { out, back } = around(g, "O.md", hl, -1, -1);
+		expect(out.edges.size).toBe(0);
+		expect(hopsOf(back.nodes)).toEqual({ X: 1, B: 2 });
+		expect([...back.edges.keys()].filter((k) => hl.edges.has(k))).toEqual([]);
+		expect(back.edges.has(edgeKey("X.md", "O.md"))).toBe(true);
+	});
+
+	it("gives a note both walks find to the nearer, the outgoing one on a tie", () => {
+		// O → P → Q → O: P is 1 out and 2 back, Q 2 out and 1 back
+		const g = buildLayers(fake({ R: ["O"], O: ["P"], P: ["Q"], Q: ["O"] }), "R.md", opts);
+		const hl = pathToRoot(g, "O.md");
+		if (!hl) throw new Error("no route");
+		const { out, back } = around(g, "O.md", hl, -1, -1);
+		expect(hopsOf(out.nodes)).toEqual({ P: 1 });
+		expect(hopsOf(back.nodes)).toEqual({ Q: 1 });
+		// P → Q is the 2nd hop both ways: outgoing
+		expect(hopsOf(out.edges)).toEqual({ "O\u0000P": 1, "P\u0000Q": 2 });
+		expect(hopsOf(back.edges)).toEqual({ "Q\u0000O": 1 });
+
+		// O ⇄ X: one hop both ways, outgoing
+		const h = buildLayers(fake({ R: ["O"], O: ["X"], X: ["O"] }), "R.md", opts);
+		const both = around(h, "O.md", pathToRoot(h, "O.md") ?? { nodes: new Set(), edges: new Set() }, 1, 1);
+		expect(hopsOf(both.out.nodes)).toEqual({ X: 1 });
+		expect(both.back.nodes.size).toBe(0);
+		expect(hopsOf(both.back.edges)).toEqual({ "X\u0000O": 1 });
+	});
+
+	it("keeps each walk to its own hops", () => {
+		const g = buildLayers(fake({ R: ["A", "B"], A: ["O"], O: ["P"], P: ["Q"], B: ["X"], X: ["Y"], Y: ["O"], Q: [] }), "R.md", opts);
+		const hl = pathToRoot(g, "O.md");
+		if (!hl) throw new Error("no route");
+		const one = around(g, "O.md", hl, 1, 2);
+		expect(hopsOf(one.out.nodes)).toEqual({ P: 1 });
+		expect(hopsOf(one.back.nodes)).toEqual({ Y: 1, X: 2 });
+		const none = around(g, "O.md", hl, 0, 0);
+		expect(none.out.edges.size + none.back.edges.size).toBe(0);
+	});
 });
 
 describe("focusOn", () => {
@@ -270,15 +347,16 @@ describe("focusOn", () => {
 		const g = buildLayers(fake(chain), "R.md", opts);
 		const route = pathToRoot(g, "A.md")?.nodes ?? new Set<string>();
 		const shown = (hops: number) => [...focusOn(g, route, "A.md", hops).nodes.values()].map((n) => n.display).sort();
-		// 1 hop = the route and the notes it links to, as without `from`
+		// 1 hop = the route and the notes it links to, as without `from`; so is none
 		expect(shown(1)).toEqual(["A", "B", "F", "R"]);
 		expect(shown(1)).toEqual([...focusOn(g, route).nodes.values()].map((n) => n.display).sort());
+		expect(shown(0)).toEqual(shown(1));
 		expect(shown(2)).toEqual(["A", "B", "C", "F", "R"]);
 		// F is off the route, so the walk goes on from it: Z is 3 hops away (A → B → F → Z)
 		expect(shown(3)).toEqual(["A", "B", "C", "D", "F", "R", "Z"]);
-		// 0 = every hop
-		expect(shown(0)).toEqual(["A", "B", "C", "D", "E", "F", "R", "Z"]);
-		const f = focusOn(g, route, "A.md", 0);
+		// negative = every hop
+		expect(shown(-1)).toEqual(["A", "B", "C", "D", "E", "F", "R", "Z"]);
+		const f = focusOn(g, route, "A.md", -1);
 		expect(f.layers.map((l) => l.map((id) => f.nodes.get(id)?.display).sort())).toEqual([
 			["R"],
 			["A", "F"],
@@ -294,9 +372,25 @@ describe("focusOn", () => {
 		// the open note X links back up to the root: what the root links to is not taken
 		const g = buildLayers(fake({ R: ["A", "B"], A: ["X"], B: ["Y"], X: ["R"], Y: [] }), "R.md", opts);
 		const route = pathToRoot(g, "X.md")?.nodes ?? new Set<string>();
-		expect(names(focusOn(g, route, "X.md", 0))).toEqual([["R"], ["A", "B"], ["X"]]);
+		expect(names(focusOn(g, route, "X.md", -1, -1))).toEqual([["R"], ["A", "B"], ["X"]]);
 		// a `from` the route does not reach (no route) adds nothing
-		expect(names(focusOn(g, new Set(["R.md"]), "Y.md", 0))).toEqual([["R"], ["A", "B"]]);
+		expect(names(focusOn(g, new Set(["R.md"]), "Y.md", -1, -1))).toEqual([["R"], ["A", "B"]]);
+	});
+
+	it("keeps the backlinks as far as asked for, in their own rows, even with empty rows between", () => {
+		// route R → A → O; E links back up to O from three rows down, past C and D
+		const adj = { R: ["A", "B"], A: ["O"], B: ["C"], C: ["D"], D: ["E"], E: ["O"], O: [] };
+		const g = buildLayers(fake(adj), "R.md", opts);
+		const route = pathToRoot(g, "O.md")?.nodes ?? new Set<string>();
+		expect(names(focusOn(g, route, "O.md", 1, 0))).toEqual([["R"], ["A", "B"], ["O"]]);
+		const f = focusOn(g, route, "O.md", 1, 1);
+		expect(names(f)).toEqual([["R"], ["A", "B"], ["O"], [], ["E"]]);
+		expect(f.nodes.get("E.md")?.depth).toBe(4);
+		expect(kinds(f)).toContain("E>O:up");
+		// D links to E: two hops back, so D (and its row) comes back
+		expect(names(focusOn(g, route, "O.md", 1, 2))).toEqual([["R"], ["A", "B"], ["O"], ["D"], ["E"]]);
+		// every hop back: the whole chain B → C → D → E → O, stopping at the root (on the route)
+		expect(names(focusOn(g, route, "O.md", 1, -1))).toEqual([["R"], ["A", "B"], ["O", "C"], ["D"], ["E"]]);
 	});
 
 	it("gives the same route on the focused graph", () => {
@@ -394,6 +488,16 @@ describe("place", () => {
 		expect(starts).toEqual([0, 50, 120]);
 		expect(get(points, "A.md").x).toBe(50);
 		expect(get(points, "G1.md").x).toBe(120);
+	});
+
+	it("leaves only a gap for an empty layer", () => {
+		const adj = { R: ["A", "B"], A: ["O"], B: ["C"], C: ["D"], D: ["E"], E: ["O"], O: [] };
+		const g = buildLayers(fake(adj), "R.md", opts);
+		const f = focusOn(g, pathToRoot(g, "O.md")?.nodes ?? new Set(), "O.md", 1, 1);
+		const { points, starts, ports } = place(f, () => 20, depth, base);
+		expect(starts).toEqual([0, 80, 160, 240, 300]);
+		expect(ports).toEqual([20, 100, 180, 240, 320]);
+		expect(get(points, "E.md").y).toBe(300);
 	});
 
 	it("starts a wrapped sub-row after the deepest node of the one before", () => {
