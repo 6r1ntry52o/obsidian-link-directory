@@ -24,6 +24,7 @@ import {
 	orderLayers,
 	pathToRoot,
 	place,
+	scopePrefix,
 	type Around,
 	type Direction,
 	type EdgeKind,
@@ -46,6 +47,8 @@ const ROOT_R = 7;
 /** The open note's dot (styles.css draws it this size). */
 const ACTIVE_R = 8;
 const HIT_R = 11;
+/** Half a square dot's side, per radius of the circle it stands in for. */
+const SQUARE_HALF = 0.9;
 /** Room per dot along a row growing down (names hidden or under the dot). */
 const DOT_STEP = 26;
 /** Room per dot along a column growing right (name beside the dot). */
@@ -123,6 +126,8 @@ export class TreeGraphView extends ItemView {
 	/** Root while following the active note (notes opened from the graph do not move it). */
 	private followedPath: string | null = null;
 	private orphans: TFile[] = [];
+	/** Path prefix of the folder searched for unreachable notes, with a pinned root ("" = the whole vault). */
+	private orphanPrefix: string | null = null;
 	private lastNoteLeaf: WorkspaceLeaf | null = null;
 	private pendingOpen: string | null = null;
 
@@ -393,6 +398,7 @@ export class TreeGraphView extends ItemView {
 		}
 		this.drawnFor = anchor;
 		this.graph = g;
+		this.orphanPrefix = this.following ? null : scopePrefix(s.graphOrphanScope, rootFile.parent?.path ?? "");
 
 		const right = s.graphDirection === "right";
 		const allNames = s.graphLabels === "all";
@@ -561,10 +567,13 @@ export class TreeGraphView extends ItemView {
 		});
 		if (n.id === this.graph?.root) el.addClass("is-root");
 		if (n.path === null) el.addClass("is-unresolved");
+		// A note outside the folder searched for unreachable notes is a square: colour and rings are taken.
+		const outOfScope = this.orphanPrefix !== null && n.path !== null && !n.path.startsWith(this.orphanPrefix);
+		if (outOfScope) el.addClass("is-out-of-scope");
 		el.createSvg("title").textContent = n.path ?? n.target;
 		el.createSvg("circle", { cls: "ldg-hit", attr: { r: HIT_R } });
 		const r = radius(this.graph, n.id);
-		el.createSvg("circle", { cls: "ldg-dot", attr: { r } });
+		sizeDot(el.createSvg(outOfScope ? "rect" : "circle", { cls: "ldg-dot" }), r);
 		el.createSvg("text", {
 			cls: "ldg-label",
 			attr: right
@@ -654,7 +663,8 @@ export class TreeGraphView extends ItemView {
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-marker"))) el.remove();
 		for (const el of Array.from(this.nodesEl.querySelectorAll(".ldg-hop-num"))) {
 			const node = el.parentElement;
-			node?.find(".ldg-dot")?.setAttr("r", radius(g, node.getAttribute("data-id") ?? ""));
+			const dot = node?.find(".ldg-dot");
+			if (node && dot) sizeDot(dot, radius(g, node.getAttribute("data-id") ?? ""));
 			el.remove();
 		}
 
@@ -695,7 +705,7 @@ export class TreeGraphView extends ItemView {
 				const title = el.find("title");
 				if (title) title.textContent += `\n${back ? "←" : "→"} ${hopsLabel(hop)}`;
 				if (!numbers) continue;
-				dot.setAttr("r", numRadius(hop));
+				sizeDot(dot, numRadius(hop));
 				const num = createSvg("text", { cls: hop < 10 ? "ldg-hop-num" : ["ldg-hop-num", "is-wide"] });
 				num.textContent = String(hop);
 				dot.after(num);
@@ -810,6 +820,9 @@ export class TreeGraphView extends ItemView {
 		if (this.owners && this.owners.size > 0) item("is-group", t("graphLegendGroup"));
 		if (g.edges.some((e) => e.kind !== "down")) item("is-faint", t("graphLegendFaint"));
 		if (hl && hl.edges.size > 0) item("is-route", t("graphLegendRoute"));
+		if (this.nodesEl.querySelector(".ldg-node.is-out-of-scope")) {
+			item("is-out-of-scope", t("graphLegendOutOfScope").replace("{folder}", (this.orphanPrefix ?? "").replace(/\/$/, "")));
+		}
 		const hops = (reach: Reach | undefined, back: boolean, text: string) => {
 			if (!reach || reach.edges.size === 0) return;
 			// One swatch per hop shown, the last shade standing for that many and more.
@@ -838,8 +851,7 @@ export class TreeGraphView extends ItemView {
 	/** Only for a pinned root: "unreachable" means little when the root moves with every note. */
 	private findOrphans(g: LayeredGraph, rootFile: TFile): TFile[] {
 		if (this.following) return [];
-		const scope = this.plugin.settings.graphOrphanScope.trim().replace(/\/+$/, "") || (rootFile.parent?.path ?? "");
-		const prefix = scope === "" || scope === "/" ? "" : `${scope}/`;
+		const prefix = this.orphanPrefix ?? "";
 		return this.app.vault
 			.getMarkdownFiles()
 			.filter((f) => f.path.startsWith(prefix) && !g.nodes.has(f.path))
@@ -1388,6 +1400,9 @@ export class TreeGraphView extends ItemView {
 				hitRows: this.orphansEl.querySelectorAll(".ldg-orphan.is-hit").length,
 				flow: this.flows.length,
 				groupBoxes: this.bandsEl.querySelectorAll(".ldg-group").length,
+				outOfScope: Array.from(this.nodesEl.querySelectorAll(".ldg-node.is-out-of-scope")).map((el) =>
+					name(el.getAttribute("data-id") ?? ""),
+				),
 			},
 			notice: this.noticeEl.isShown(),
 			orphans: this.orphans.map((f) => f.path),
@@ -1417,6 +1432,19 @@ function uv(p: Point, right: boolean): [number, number] {
 
 function radius(g: LayeredGraph | null, id: string): number {
 	return g?.root === id ? ROOT_R : DOT_R;
+}
+
+/** Sizes a note's dot: a circle of radius r, or a square of about its area. */
+function sizeDot(dot: Element, r: number): void {
+	if (dot.tagName !== "rect") {
+		dot.setAttribute("r", String(r));
+		return;
+	}
+	const half = r * SQUARE_HALF;
+	dot.setAttribute("x", String(-half));
+	dot.setAttribute("y", String(-half));
+	dot.setAttribute("width", String(2 * half));
+	dot.setAttribute("height", String(2 * half));
 }
 
 /** The arrowhead of a coloured link within a row / back up: per way (outgoing, backlink) and hop shade. */

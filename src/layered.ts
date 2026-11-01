@@ -684,3 +684,9 @@ function push(map: Map<string, string[]>, key: string, value: string): void {
 	if (list) list.push(value);
 	else map.set(key, [value]);
 }
+
+/** The path prefix of the folder searched for unreachable notes: the one set, or the root's ("" = the whole vault). */
+export function scopePrefix(scope: string, rootFolder: string): string {
+	const folder = scope.trim().replace(/\/+$/, "") || rootFolder;
+	return folder === "" || folder === "/" ? "" : `${folder}/`;
+}
