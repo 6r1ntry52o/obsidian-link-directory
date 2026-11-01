@@ -10,10 +10,12 @@ import {
 	groupLayers,
 	groupTones,
 	orderLayers,
+	outOfFolder,
 	pathToRoot,
 	place,
 	reachFrom,
 	scopePrefix,
+	splitOff,
 	type LayeredGraph,
 	type Point,
 } from "./layered";
@@ -654,6 +656,113 @@ describe("place", () => {
 		expect(b.sub).toBe(1);
 		expect(b.y - a.y).toBe(50 + 10);
 		expect(ports[1]).toBe(b.y + 20);
+	});
+});
+
+describe("outOfFolder", () => {
+	const src = fake({ "in/R": ["in/A", "out/X"], "in/A": ["?made", "?both"], "out/X": ["?both", "?theirs"] });
+	const g = buildLayers(src, "in/R.md", opts);
+
+	it("takes the notes outside the folder, and the unresolved links only they link to", () => {
+		expect([...outOfFolder(g, "in/")]).toEqual(["out/X.md", "?theirs"]);
+	});
+
+	it("takes nothing with the whole vault as the folder", () => {
+		expect(outOfFolder(g, "").size).toBe(0);
+	});
+
+	it("never takes the root, nor a link from it", () => {
+		const r = buildLayers(fake({ "out/R": ["?made", "in/A"], "in/A": [] }), "out/R.md", opts);
+		expect(outOfFolder(r, "in/").size).toBe(0);
+	});
+
+	it("takes a note from outside the graph by its folder too", () => {
+		const s = fake({ "in/R": ["in/A"], "in/A": [], "in/Y": ["in/A"], "out/Z": ["in/A"] });
+		const base = buildLayers(s, "in/R.md", opts);
+		const b = addBacklinks(base, base, s, "in/A.md", new Set(["in/R.md", "in/A.md"]), 1, opts);
+		expect([...outOfFolder(b, "in/")]).toEqual(["out/Z.md"]);
+	});
+});
+
+describe("splitOff", () => {
+	// R → A, X(out), B; A → C; X → D, so D is in the folder but reached only from outside it
+	const src = fake({
+		"in/R": ["in/A", "out/X", "in/B"],
+		"in/A": ["in/C", "out/Y"],
+		"in/B": [],
+		"in/C": [],
+		"out/X": ["in/D", "out/Y"],
+		"out/Y": [],
+		"in/D": [],
+		"out/Far": ["in/C"],
+		"in/Near": ["in/C"],
+	});
+	const base = buildLayers(src, "in/R.md", opts);
+	const route = new Set(["in/R.md", "in/A.md", "in/C.md"]);
+	const b = addBacklinks(base, base, src, "in/C.md", route, 1, opts);
+	const split = splitOff(b, outOfFolder(b, "in/"));
+
+	it("leaves the notes of the folder in their rows, and moves the others apart in their columns", () => {
+		expect(names(split)).toEqual([["in/R"], ["in/A", "in/B"], ["in/C", "in/D"]]);
+		expect(Object.fromEntries(split.apart)).toEqual({ 1: ["out/X.md", "out/Far.md"], 2: ["out/Y.md"] });
+		expect(Object.fromEntries(split.outside)).toEqual({ 1: ["in/Near.md"] });
+	});
+
+	it("keeps every note, link and depth, and leaves the graph it was given alone", () => {
+		expect(split.nodes).toBe(b.nodes);
+		expect(split.edges).toBe(b.edges);
+		expect(split.nodes.get("out/Y.md")?.depth).toBe(2);
+		expect(b.layers[1]).toContain("out/X.md");
+		expect(b.apart.size).toBe(0);
+	});
+
+	it("is the graph as it was when nothing is out", () => {
+		const same = splitOff(b, new Set());
+		expect(same.layers).toEqual(b.layers);
+		expect(same.outside).toEqual(b.outside);
+		expect(same.apart.size).toBe(0);
+	});
+
+	it("keeps the notes apart through focus", () => {
+		const f = focusOn(split, new Set(["in/R.md", "in/A.md"]));
+		expect(Object.fromEntries(f.apart)).toEqual({ 1: ["out/X.md"], 2: ["out/Y.md"] });
+	});
+
+	it("puts a note in the folder with a note in it first, whichever comes first above", () => {
+		// X comes first above and links to C, as A does
+		const g = buildLayers(fake({ "in/R": ["out/X", "in/A"], "out/X": ["in/C", "out/Z"], "in/A": ["in/C", "in/D"], "in/C": [], "in/D": [], "out/Z": [] }), "in/R.md", opts);
+		const out = outOfFolder(g, "in/");
+		const owners = groupLayers(g, out);
+		expect(owners.get("in/C.md")).toBe("in/A.md");
+		expect(owners.get("out/Z.md")).toBe("out/X.md");
+		// each block keeps its groups whole
+		const s = splitOff(g, out);
+		expect(s.layers[2]).toEqual(["in/C.md", "in/D.md"]);
+		expect(s.apart.get(2)).toEqual(["out/Z.md"]);
+	});
+
+	it("is placed past the graph and the notes outside it, on the same columns", () => {
+		const depth = () => 20;
+		const { points, starts, ports } = place(split, () => 20, depth, { direction: "down", layerGap: 60, subGap: 16, gap: 0, maxLength: 0, blockGap: 30 });
+		const at = (id: string) => points.get(id) as Point;
+		// the graph's widest layer reaches 20; 1 note outside the graph at 20 + 30 + 10 = 60; 2 apart at 70 + 30 + 20 = 120
+		expect(at("in/Near.md").x).toBe(60);
+		expect(at("out/X.md").x).toBe(110);
+		expect(at("out/Far.md").x).toBe(130);
+		expect(at("out/Y.md").x).toBe(120);
+		// a column stays one column, across the blocks
+		expect(at("out/X.md").y).toBe(at("in/A.md").y);
+		expect(at("out/Y.md").y).toBe(at("in/C.md").y);
+		expect(starts).toEqual([0, 80, 160]);
+		expect(ports).toEqual([20, 100, 180]);
+	});
+
+	it("reaches a column only the notes apart have", () => {
+		const g = buildLayers(fake({ "in/R": ["out/X"], "out/X": ["out/Y"], "out/Y": [] }), "in/R.md", opts);
+		const s = splitOff(g, outOfFolder(g, "in/"));
+		expect(s.layers).toEqual([["in/R.md"], [], []]);
+		const { points } = place(s, () => 20, () => 20, { direction: "right", layerGap: 60, subGap: 16, gap: 0, maxLength: 0, blockGap: 30 });
+		expect((points.get("out/Y.md") as Point).x).toBe(160);
 	});
 });
 

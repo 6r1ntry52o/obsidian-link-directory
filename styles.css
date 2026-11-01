@@ -556,6 +556,17 @@
 	opacity: 0.7;
 }
 
+/* Between the notes of the folder and those outside it, and the folder's name. */
+.ldg-apart-line {
+	stroke: var(--text-faint);
+	stroke-width: 1px;
+	stroke-dasharray: 6 4;
+}
+.ldg-apart-label {
+	fill: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
 /* A grey box per group of notes linked from the same note one row up, a
    darker and a paler grey in turn (on the band, behind lines and dots). */
 .ldg-group {

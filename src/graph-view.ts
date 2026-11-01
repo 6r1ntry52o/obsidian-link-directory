@@ -22,9 +22,11 @@ import {
 	groupLayers,
 	groupTones,
 	orderLayers,
+	outOfFolder,
 	pathToRoot,
 	place,
 	scopePrefix,
+	splitOff,
 	type Around,
 	type Direction,
 	type EdgeKind,
@@ -58,7 +60,7 @@ const LABEL_GAP = 12;
 const LABEL_OFFSET = 5;
 // Gaps after a layer's names: where the lines bend towards the next layer.
 // Layers sit clearly further apart than the sub-rows of a wrapped layer.
-// blockGap: between the graph and the backlinks from outside it.
+// blockGap: between the graph, the backlinks from outside it and the notes apart.
 const GAPS_DOWN = { layerGap: 48, subGap: 8, blockGap: 64 };
 const GAPS_RIGHT = { layerGap: 52, subGap: 16, blockGap: 40 };
 /** Straight run into a layer before a line reaches its dot. */
@@ -370,9 +372,11 @@ export class TreeGraphView extends ItemView {
 		const s = this.plugin.settings;
 		const src = new MetadataLinkSource(this.app);
 		const full = buildLayers(src, rootFile.path, s);
+		this.orphanPrefix = this.following ? null : scopePrefix(s.graphOrphanScope, rootFile.parent?.path ?? "");
+		const prefix = this.orphanPrefix ?? "";
 		// Group each row by the note linking to it, or order it to cross fewer lines.
 		const arrange = (lg: LayeredGraph): Map<string, string> | null => {
-			if (s.graphGroups) return groupLayers(lg);
+			if (s.graphGroups) return groupLayers(lg, outOfFolder(lg, prefix));
 			orderLayers(lg);
 			return null;
 		};
@@ -396,9 +400,10 @@ export class TreeGraphView extends ItemView {
 		if (anchor && hl && s.graphBackHops !== 0) {
 			g = addBacklinks(g, full, src, fromRoute ? hl.nodes : anchor, hl.nodes, s.graphBackHops, s);
 		}
+		// With a pinned root, the notes outside the folder go apart, so those in it read as one tree.
+		g = splitOff(g, outOfFolder(g, prefix));
 		this.drawnFor = anchor;
 		this.graph = g;
-		this.orphanPrefix = this.following ? null : scopePrefix(s.graphOrphanScope, rootFile.parent?.path ?? "");
 
 		const right = s.graphDirection === "right";
 		const allNames = s.graphLabels === "all";
@@ -410,6 +415,7 @@ export class TreeGraphView extends ItemView {
 			s.graphMaxLength,
 			s.graphGroups,
 			s.graphFocus ? `focus:${route ?? ""}:${s.graphOutHops}:${s.graphBackHops}:${s.graphBackFrom}` : "",
+			prefix,
 		].join("|");
 		if (layoutKey !== this.layoutKey) this.fitted = false;
 		this.layoutKey = layoutKey;
@@ -447,6 +453,7 @@ export class TreeGraphView extends ItemView {
 		this.first = placed.first;
 		this.drawBands(g, right, depth);
 		if (this.owners) this.drawGroups(g, this.owners, right, depth);
+		this.drawApartLine(g, right, depth);
 		for (const e of g.edges) this.drawEdge(e);
 		for (const n of g.nodes.values()) this.drawNode(n, labels.get(n.id) ?? n.display, right);
 
@@ -460,11 +467,12 @@ export class TreeGraphView extends ItemView {
 
 	/**
 	 * A faint band behind each layer, so a wrapped layer still reads as one
-	 * row, and behind each column of the backlinks from outside the graph.
+	 * row, and behind each column of the backlinks from outside the graph and
+	 * of the notes apart.
 	 */
 	private drawBands(g: LayeredGraph, right: boolean, depth: (id: string) => number): void {
 		const pad = 10;
-		[...g.layers.slice(1), ...g.outside.values()].forEach((layer) => {
+		[...g.layers.slice(1), ...g.outside.values(), ...g.apart.values()].forEach((layer) => {
 			let u0 = Infinity;
 			let u1 = -Infinity;
 			let v0 = Infinity;
@@ -491,8 +499,7 @@ export class TreeGraphView extends ItemView {
 	private drawGroups(g: LayeredGraph, owners: Map<string, string>, right: boolean, depth: (id: string) => number): void {
 		const pad = 9;
 		const inset = 1.5;
-		g.layers.forEach((layer, d) => {
-			if (d === 0) return;
+		[...g.layers.slice(1), ...g.apart.values()].forEach((layer) => {
 			const tones = groupTones(layer, (id) => this.points.get(id)?.sub ?? 0, owners);
 			// Per sub-row: how far its names reach, and its runs of one group along the row.
 			const subs = new Map<number, { reach: number; runs: { owner: string; points: Point[] }[] }>();
@@ -521,6 +528,30 @@ export class TreeGraphView extends ItemView {
 				}
 			}
 		});
+	}
+
+	/** A dashed line between the notes of the folder and those apart, the folder named on the far side of it. */
+	private drawApartLine(g: LayeredGraph, right: boolean, depth: (id: string) => number): void {
+		const apart = new Set([...g.apart.values()].flat());
+		if (apart.size === 0) return;
+		let near = -Infinity;
+		let far = Infinity;
+		let v0 = Infinity;
+		let v1 = -Infinity;
+		for (const [id, p] of this.points) {
+			const [u, v] = uv(p, right);
+			if (apart.has(id)) far = Math.min(far, u - p.w / 2);
+			else near = Math.max(near, u + p.w / 2);
+			v0 = Math.min(v0, v - 10);
+			v1 = Math.max(v1, v + depth(id));
+		}
+		const at = (near + far) / 2;
+		const [x1, y1, x2, y2] = right ? [v0, at, v1, at] : [at, v0, at, v1];
+		this.bandsEl.createSvg("line", { cls: "ldg-apart-line", attr: { x1, y1, x2, y2 } });
+		this.bandsEl.createSvg("text", {
+			cls: "ldg-apart-label",
+			attr: { x: right ? x1 : x1 + 6, y: right ? y1 + 3 : y1, "dominant-baseline": "hanging" },
+		}).textContent = t("graphApart").replace("{folder}", this.scopeFolder());
 	}
 
 	/** A rounded box behind the lines, from where it spans along the rows (u) and the way the graph grows (v). */
@@ -821,7 +852,7 @@ export class TreeGraphView extends ItemView {
 		if (g.edges.some((e) => e.kind !== "down")) item("is-faint", t("graphLegendFaint"));
 		if (hl && hl.edges.size > 0) item("is-route", t("graphLegendRoute"));
 		if (this.nodesEl.querySelector(".ldg-node.is-out-of-scope")) {
-			item("is-out-of-scope", t("graphLegendOutOfScope").replace("{folder}", (this.orphanPrefix ?? "").replace(/\/$/, "")));
+			item("is-out-of-scope", t("graphLegendOutOfScope").replace("{folder}", this.scopeFolder()));
 		}
 		const hops = (reach: Reach | undefined, back: boolean, text: string) => {
 			if (!reach || reach.edges.size === 0) return;
@@ -837,7 +868,7 @@ export class TreeGraphView extends ItemView {
 		};
 		hops(near?.out, false, t("graphLegendOpenLinks"));
 		hops(near?.back, true, t(this.plugin.settings.graphBackFrom === "route" ? "graphLegendBacklinksRoute" : "graphLegendBacklinks"));
-		if ([...g.outside.values()].some((ids) => ids.length > 0)) {
+		if ([...g.nodes.values()].some((n) => n.outside)) {
 			const where = this.plugin.settings.graphDirection === "right" ? t("graphBelow") : t("graphBeside");
 			el.createSpan({ cls: "ldg-legend-item", text: t("graphLegendOutside").replace("{where}", where) });
 		}
@@ -921,7 +952,8 @@ export class TreeGraphView extends ItemView {
 			if (g?.nodes.has(n.id)) found.add(n.id);
 			else hidden++;
 		}
-		const order = g ? [...g.layers.flat(), ...[...g.outside].sort((a, b) => a[0] - b[0]).flatMap(([, ids]) => ids)] : [];
+		const byColumn = (block: Map<number, string[]>) => [...block].sort((a, b) => a[0] - b[0]).flatMap(([, ids]) => ids);
+		const order = g ? [...g.layers.flat(), ...byColumn(g.outside), ...byColumn(g.apart)] : [];
 		this.hits = order.filter((id) => found.has(id));
 		for (const id of this.hits) {
 			const el = this.nodeEls.get(id);
@@ -1265,6 +1297,11 @@ export class TreeGraphView extends ItemView {
 		return this.plugin.settings.graphRootMode !== "fixed";
 	}
 
+	/** The folder searched for unreachable notes, as the legend names it. */
+	private scopeFolder(): string {
+		return (this.orphanPrefix ?? "").replace(/\/$/, "");
+	}
+
 	/** The root the graph shows now (used when pinning it). */
 	get rootPath(): string | null {
 		return this.graph?.root ?? null;
@@ -1363,6 +1400,8 @@ export class TreeGraphView extends ItemView {
 			anchor: this.anchor,
 			// backlinks from outside the graph, per column
 			outside: Object.fromEntries([...g.outside].map(([c, ids]) => [c, ids.map(name)])),
+			// notes outside the folder, per column
+			apart: Object.fromEntries([...g.apart].map(([c, ids]) => [c, ids.map(name)])),
 			focus: this.plugin.settings.graphFocus,
 			outHops: s.graphOutHops,
 			backHops: s.graphBackHops,
