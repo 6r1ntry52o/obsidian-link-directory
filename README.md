@@ -14,7 +14,7 @@ A note is a "folder"; the notes it links to are its "files". Expand a note to se
 - **Lazy expansion** — children are computed only when you expand a node, so large vaults stay fast. No depth limit needed; a node-count limit guards reveal searches.
 - **Unresolved links** are shown in italics. Clicking one creates the note (like clicking the link in the editor).
 - **Auto-reveal** — with a pinned root, opening a note expands the tree along the shortest link path to it.
-- **Click model** — click a name to open it; the chevron expands/collapses. A setting flips this to *click = expand, double-click = open*. Works on mobile (long-press for the context menu).
+- **Click model** — click a name to open it; the chevron expands/collapses, and so do the rest of the row's height around it, the indent to its left and a column at the row's right end (hover shades it; it takes the end of a long name). A setting flips this to *click = expand, double-click = open*. Works on mobile (long-press for the context menu).
 - **Keyboard** — ↑ ↓ move, → expands, ← collapses / goes to parent, Enter opens.
 - Right-click menu: *Set as root*, *Open in new tab*, plus the standard file menu.
 - Live updates when notes are edited, renamed or deleted.
@@ -56,6 +56,7 @@ A second view (ribbon icon *network*, command **Open tree graph**) draws the sam
 |---|---|---|
 | Root note | Follow active note | or a fixed vault path |
 | Click on a row | Open the note | or expand/collapse with double-click to open |
+| Expand/collapse column (px) | 120 | at the right end of a row with children, at most half the row; 0 = none |
 | Deduplicate repeated notes | on | off = full subtree under every parent |
 | Sort children | order of appearance | or by name |
 | Include embeds / frontmatter links | on | |

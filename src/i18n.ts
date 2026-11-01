@@ -28,6 +28,8 @@ const en = {
 	setClickDesc: "What a click on the note name does. The chevron always expands/collapses.",
 	setClickOpen: "Open the note",
 	setClickExpand: "Expand/collapse (double-click opens)",
+	setToggleWidth: "Expand/collapse column (px)",
+	setToggleWidthDesc: "A click this close to the right end of a row with children expands/collapses it, even on the end of a long name. At most half the row. 0 = only the chevron and the space left of it.",
 	setDedupe: "Deduplicate repeated notes",
 	setDedupeDesc:
 		"Show 2nd+ occurrences of a note as a stub (expand by hand). Off shows the full subtree under every parent.",
@@ -184,6 +186,8 @@ const ja: typeof en = {
 	setClickDesc: "ノート名をクリックしたときの動作。矢印は常に展開／折りたたみ。",
 	setClickOpen: "ノートを開く",
 	setClickExpand: "展開／折りたたみ（ダブルクリックで開く）",
+	setToggleWidth: "展開／折りたたみの列（px）",
+	setToggleWidthDesc: "子のある行の右端からこの幅をクリックすると、展開／折りたたみする（長い名前の末尾の上でも）。行の半分まで。0 で矢印とその左の余白だけ。",
 	setDedupe: "重複ノートをまとめる",
 	setDedupeDesc: "2回目以降の出現をスタブ表示（手動で展開可）。オフにすると全ての親の下に全展開。",
 	setSort: "子の並び順",
