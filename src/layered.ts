@@ -39,6 +39,12 @@ export interface LayeredGraph {
 	 * from the layers. A column can come before the root's (negative).
 	 */
 	outside: Map<number, string[]>;
+	/**
+	 * Notes outside the folder searched for unreachable notes per column, in
+	 * order (splitOff): taken out of `layers` and `outside`, drawn past them both,
+	 * so what stays is the notes of the folder.
+	 */
+	apart: Map<number, string[]>;
 	edges: GraphEdge[];
 	/** The walk stopped at `maxNodes`. */
 	truncated: boolean;
@@ -114,7 +120,7 @@ export function buildLayers(src: LinkSource, rootPath: string, opts: LayerOption
 			edges.push({ from, to, kind });
 		}
 	}
-	return { root: rootPath, nodes, layers, outside: new Map(), edges, truncated };
+	return { root: rootPath, nodes, layers, outside: new Map(), apart: new Map(), edges, truncated };
 }
 
 /** Number of crossing pairs among the down edges between adjacent layers. */
@@ -191,16 +197,18 @@ export function orderLayers(g: LayeredGraph, sweeps = 4): void {
  * growing down). On a whole graph this is the order the walk found the notes
  * in. Returns each note's group (the note it goes with); a note no note in
  * the layer above links to (a focused graph can leave one) has none and goes
- * last.
+ * last. The notes of `apart` (outOfFolder) count last among the notes above,
+ * so a note in the folder goes with a note in it whenever one links to it.
  */
-export function groupLayers(g: LayeredGraph): Map<string, string> {
+export function groupLayers(g: LayeredGraph, apart: ReadonlySet<string> = new Set()): Map<string, string> {
 	const childrenOf = new Map<string, string[]>();
 	for (const e of g.edges) if (e.kind === "down") push(childrenOf, e.from, e.to);
 	const owners = new Map<string, string>();
 	for (let d = 1; d < g.layers.length; d++) {
 		const rest = new Set(g.layers[d]);
 		const grouped: string[] = [];
-		for (const p of g.layers[d - 1] as string[]) {
+		const above = g.layers[d - 1] as string[];
+		for (const p of [...above.filter((id) => !apart.has(id)), ...above.filter((id) => apart.has(id))]) {
 			for (const c of childrenOf.get(p) ?? []) {
 				if (!rest.delete(c)) continue;
 				owners.set(c, p);
@@ -278,9 +286,9 @@ export function focusOn(
 	}
 	const layers = g.layers.map((l) => l.filter((id) => keep.has(id)));
 	while (layers.length > 1 && (layers[layers.length - 1] as string[]).length === 0) layers.pop();
-	const outside = new Map([...g.outside].map(([c, ids]) => [c, ids.filter((id) => keep.has(id))] as const));
+	const kept = (columns: Map<number, string[]>) => new Map([...columns].map(([c, ids]) => [c, ids.filter((id) => keep.has(id))] as const));
 	const edges = g.edges.filter((e) => keep.has(e.from) && keep.has(e.to));
-	return { root: g.root, nodes, layers, outside, edges, truncated: g.truncated };
+	return { root: g.root, nodes, layers, outside: kept(g.outside), apart: kept(g.apart), edges, truncated: g.truncated };
 }
 
 /**
@@ -396,7 +404,42 @@ export function addBacklinks(
 		ids.forEach((n, i) => pos.set(n, i));
 		outside.set(c, ids);
 	}
-	return { root: g.root, nodes, layers: g.layers, outside, edges, truncated };
+	return { root: g.root, nodes, layers: g.layers, outside, apart: g.apart, edges, truncated };
+}
+
+/**
+ * The notes outside the folder with path prefix `prefix` (scopePrefix), but for
+ * the root, which starts the graph wherever it is. An unresolved link is in no
+ * folder yet, so it goes with the notes linking to it: it counts when all of
+ * them do.
+ */
+export function outOfFolder(g: LayeredGraph, prefix: string): Set<string> {
+	const out = new Set<string>();
+	for (const n of g.nodes.values()) {
+		if (n.id !== g.root && n.path !== null && !n.path.startsWith(prefix)) out.add(n.id);
+	}
+	const linkedFromIn = new Set(g.edges.filter((e) => !out.has(e.from)).map((e) => e.to));
+	for (const n of g.nodes.values()) {
+		if (n.path === null && !linkedFromIn.has(n.id)) out.add(n.id);
+	}
+	return out;
+}
+
+/**
+ * Takes the notes of `out` from the layers and the notes outside the graph into
+ * `apart`, each keeping its column: first those the root reaches, in layer
+ * order, then the others. Returns a new graph.
+ */
+export function splitOff(g: LayeredGraph, out: ReadonlySet<string>): LayeredGraph {
+	const apart = new Map<number, string[]>();
+	const stays = (id: string) => {
+		if (!out.has(id)) return true;
+		push(apart, (g.nodes.get(id) as GraphNode).depth, id);
+		return false;
+	};
+	const layers = g.layers.map((l) => l.filter(stays));
+	const outside = new Map([...g.outside].map(([c, ids]) => [c, ids.filter(stays)] as const));
+	return { ...g, layers, outside, apart };
 }
 
 /** down = rows top to bottom; right = columns left to right. */
@@ -422,7 +465,7 @@ export interface PlaceOptions {
 	gap: number;
 	/** Wrap a layer longer than this along its row (0 = never). */
 	maxLength: number;
-	/** Cross-axis gap between the layers and the notes outside the graph. */
+	/** Cross-axis gap between the layers, the notes outside the graph and the notes apart. */
 	blockGap?: number;
 }
 
@@ -480,9 +523,10 @@ function foldRow(ids: string[], slot: (id: string) => number, o: PlaceOptions): 
  * The notes outside the graph (g.outside) go in the same columns, as a block
  * of their own further along the cross axis, clear of every layer (below the
  * graph growing right, beside it growing down), each column's part centred on
- * one line; a column before the root's comes first. A column is as deep as
- * the deeper of its two parts; an empty one is only a gap, so the columns
- * after it still read as further away.
+ * one line; a column before the root's comes first. The notes apart
+ * (g.apart) follow as a third block past that one. A column is as deep as the
+ * deepest of its parts; an empty one is only a gap, so the columns after it
+ * still read as further away.
  */
 export function place(
 	g: LayeredGraph,
@@ -493,16 +537,22 @@ export function place(
 	const points = new Map<string, Point>();
 	const starts: number[] = [];
 	const ports: number[] = [];
-	const outs = [...g.outside.keys()].filter((c) => (g.outside.get(c) as string[]).length > 0);
+	const outs = [...g.outside, ...g.apart].filter(([, ids]) => ids.length > 0).map(([c]) => c);
 	const first = Math.min(0, ...outs);
 	const last = Math.max(g.layers.length - 1, ...outs);
-	const columns: { main: Fold; out: Fold }[] = [];
+	// Each column's parts, block by block: the layers, the notes outside the graph, the notes apart.
+	const columns: Fold[][] = [];
 	for (let c = first; c <= last; c++) {
-		columns.push({ main: foldRow(g.layers[c] ?? [], slot, o), out: foldRow(g.outside.get(c) ?? [], slot, o) });
+		columns.push([g.layers[c] ?? [], g.outside.get(c) ?? [], g.apart.get(c) ?? []].map((ids) => foldRow(ids, slot, o)));
 	}
-	// The outside block's centre line: past the widest layer, then half the widest outside part.
-	const half = (f: Fold) => f.extent / 2;
-	const centre = Math.max(0, ...columns.map((c) => half(c.main))) + (o.blockGap ?? 0) + Math.max(0, ...columns.map((c) => half(c.out)));
+	// Each block's centre line: past the blocks before it, then half its own widest part.
+	const half = (block: number) => Math.max(0, ...columns.map((parts) => (parts[block] as Fold).extent / 2));
+	const centres = [0];
+	for (let block = 1, edge = half(0); block < 3; block++) {
+		const h = half(block);
+		centres.push(edge + (o.blockGap ?? 0) + h);
+		if (h > 0) edge = (centres[block] as number) + h;
+	}
 
 	// Places a part from v0 centred on `mid`, returning how deep it reaches.
 	const lay = (f: Fold, v0: number, mid: number): number => {
@@ -532,11 +582,11 @@ export function place(
 	};
 
 	let v0 = 0;
-	for (const { main, out } of columns) {
-		const reach = Math.max(lay(main, v0, 0), lay(out, v0, centre));
+	for (const parts of columns) {
+		const reach = Math.max(...parts.map((f, block) => lay(f, v0, centres[block] as number)));
 		starts.push(v0);
 		ports.push(v0 + reach);
-		v0 += main.rows + out.rows === 0 ? o.layerGap : reach + o.layerGap;
+		v0 += parts.every((f) => f.rows === 0) ? o.layerGap : reach + o.layerGap;
 	}
 	return { points, starts, ports, first };
 }
@@ -679,7 +729,7 @@ function positions(g: LayeredGraph): Map<string, number> {
 	return pos;
 }
 
-function push(map: Map<string, string[]>, key: string, value: string): void {
+function push<K>(map: Map<K, string[]>, key: K, value: string): void {
 	const list = map.get(key);
 	if (list) list.push(value);
 	else map.set(key, [value]);
