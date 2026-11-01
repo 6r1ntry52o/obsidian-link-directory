@@ -303,6 +303,17 @@
 .ldg-node.is-unresolved.is-link .ldg-dot {
 	stroke: var(--ldg-hop);
 }
+/* A note outside the folder searched for unreachable notes: a square (x, y and
+   size from sizeDot in graph-view.ts; the open note's as its dot grows to ACTIVE_R). */
+.ldg-node.is-out-of-scope .ldg-dot {
+	rx: 1.5px;
+}
+.ldg-node.is-out-of-scope.is-active .ldg-dot {
+	x: -7.2px;
+	y: -7.2px;
+	width: 14.4px;
+	height: 14.4px;
+}
 /* Its hops, in its dot (made larger for it) when the setting asks: black or
    white, whichever reads better on the dot's shade (the lightness where both
    give the same contrast is about 49). */
@@ -426,6 +437,13 @@
 	width: 14px;
 	margin-inline-start: 0.3em;
 	border-top: 2.5px solid var(--ldg-hop);
+}
+.ldg-swatch.is-out-of-scope {
+	width: 9px;
+	height: 9px;
+	border: 0;
+	border-radius: 1.5px;
+	background: var(--graph-node, var(--text-muted));
 }
 .ldg-swatch.is-group {
 	width: 18px;

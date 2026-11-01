@@ -13,6 +13,7 @@ import {
 	pathToRoot,
 	place,
 	reachFrom,
+	scopePrefix,
 	type LayeredGraph,
 	type Point,
 } from "./layered";
@@ -653,5 +654,24 @@ describe("place", () => {
 		expect(b.sub).toBe(1);
 		expect(b.y - a.y).toBe(50 + 10);
 		expect(ports[1]).toBe(b.y + 20);
+	});
+});
+
+describe("scopePrefix", () => {
+	it("takes the folder set, with or without a trailing slash", () => {
+		expect(scopePrefix("note", "tg")).toBe("note/");
+		expect(scopePrefix(" note/sub// ", "tg")).toBe("note/sub/");
+	});
+
+	it("falls back to the root's folder", () => {
+		expect(scopePrefix("", "tg")).toBe("tg/");
+	});
+
+	it("is empty for the vault's top folder: every note is inside", () => {
+		expect(scopePrefix("", "/")).toBe("");
+	});
+
+	it("does not take a sibling folder of a similar name for the folder", () => {
+		expect("note2/a.md".startsWith(scopePrefix("note", "/"))).toBe(false);
 	});
 });
