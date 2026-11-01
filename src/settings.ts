@@ -11,6 +11,8 @@ export interface LinkDirectorySettings {
 	rootMode: "active" | "fixed";
 	fixedRootPath: string;
 	clickAction: "open" | "expand";
+	/** Tree, click = open: the width in px at the right end of a row with children that expands/collapses it (0 = none). */
+	treeToggleWidth: number;
 	dedupe: boolean;
 	sort: "appearance" | "name";
 	includeEmbeds: boolean;
@@ -55,6 +57,7 @@ export const DEFAULT_SETTINGS: LinkDirectorySettings = {
 	rootMode: "active",
 	fixedRootPath: "",
 	clickAction: "open",
+	treeToggleWidth: 120,
 	dedupe: true,
 	sort: "appearance",
 	includeEmbeds: true,
@@ -145,8 +148,24 @@ export class LinkDirectorySettingTab extends PluginSettingTab {
 					.onChange((v) => {
 						s.clickAction = v as "open" | "expand";
 						save();
+						this.display();
 					}),
 			);
+
+		if (s.clickAction === "open") {
+			new Setting(containerEl)
+				.setName(t("setToggleWidth"))
+				.setDesc(t("setToggleWidthDesc"))
+				.addText((tx) =>
+					tx.setValue(String(s.treeToggleWidth)).onChange((v) => {
+						const n = Number.parseInt(v, 10);
+						if (Number.isFinite(n) && n >= 0) {
+							s.treeToggleWidth = n;
+							save();
+						}
+					}),
+				);
+		}
 
 		new Setting(containerEl)
 			.setName(t("setDedupe"))

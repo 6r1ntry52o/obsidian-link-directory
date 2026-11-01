@@ -92,6 +92,33 @@
 	}
 }
 
+/* Expanding a row need not mean hitting a 16px chevron: the row's whole height
+   left of the name (and the indent beyond it, otherwise dead) belongs to the
+   chevron, and so does a column at the row's right end, in line on every row
+   as rows all end at the same edge. */
+.link-directory .ld-toggle-gutter {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-start: -100vw;
+	width: calc(100vw + var(--size-4-6));
+}
+.link-directory .ld-toggle-zone {
+	position: absolute;
+	inset-block: 0;
+	inset-inline-end: 0;
+	width: var(--ld-toggle-width, 120px);
+	max-width: 50%;
+	border-radius: var(--radius-s);
+}
+.link-directory .ld-toggle-zone:hover {
+	background-color: var(--background-modifier-hover);
+}
+/* The dup marker stays clickable on top of the column. */
+.link-directory .ld-marker {
+	position: relative;
+	z-index: 1;
+}
+
 /* Keyboard focus (mirrors the File Explorer's .has-focus) */
 .link-directory .nav-files-container:focus {
 	outline: none;

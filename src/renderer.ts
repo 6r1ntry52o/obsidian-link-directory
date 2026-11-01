@@ -118,6 +118,7 @@ export class TreeRenderer {
 		} else {
 			for (const tree of this.trees) tree.resetSeen();
 		}
+		this.filesEl.style.setProperty("--ld-toggle-width", `${this.host.settings.treeToggleWidth}px`);
 		for (const tree of this.trees) this.renderNode(tree, tree.root, this.filesEl);
 		this.afterRender();
 	}
@@ -151,6 +152,7 @@ export class TreeRenderer {
 		if (expandable) {
 			iconEl = selfEl.createDiv({ cls: ["tree-item-icon", "collapse-icon", "nav-folder-collapse-indicator"] });
 			setIcon(iconEl, "right-triangle");
+			selfEl.createDiv({ cls: "ld-toggle-gutter" });
 		}
 
 		const inner = selfEl.createDiv({
@@ -158,6 +160,11 @@ export class TreeRenderer {
 			text: node.display,
 		});
 		if (node.subpath) inner.createSpan({ cls: "ld-subpath", text: node.subpath });
+
+		// Click = expand already covers the whole row, and would lose double-click to open here.
+		if (expandable && this.host.settings.clickAction === "open" && this.host.settings.treeToggleWidth > 0) {
+			selfEl.createDiv({ cls: "ld-toggle-zone" });
+		}
 
 		if (node.status === "cycle" || node.status === "dup") {
 			const flair = selfEl.createDiv({ cls: "tree-item-flair-outer" }).createSpan({
@@ -193,7 +200,7 @@ export class TreeRenderer {
 	private bindRow(node: TreeNode, selfEl: HTMLElement): void {
 		const expandable = node.hasChildren && node.status !== "cycle";
 		const expandMode = this.host.settings.clickAction === "expand";
-		const inChevron = (ev: Event) => !!(ev.target as HTMLElement | null)?.closest(".collapse-icon");
+		const inChevron = (ev: Event) => !!(ev.target as HTMLElement | null)?.closest(".collapse-icon, .ld-toggle-gutter, .ld-toggle-zone");
 
 		selfEl.addEventListener("pointerdown", (ev) => {
 			if (ev.pointerType !== "touch") return;
